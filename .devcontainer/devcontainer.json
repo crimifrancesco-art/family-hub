@@ -1,0 +1,12 @@
+{
+  "name": "family-hub",
+  "postAttachCommand": "npm run dev",
+  "forwardPorts": [5173],
+  "portsAttributes": {
+    "5173": {
+      "label": "Vite Dev Server",
+      "onAutoForward": "openBrowser",
+      "visibility": "public"
+    }
+  }
+}
