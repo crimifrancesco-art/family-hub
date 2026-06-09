@@ -20,9 +20,7 @@ function badgeClass(status) {
 }
 
 function mapsLink(address, lat, lng) {
-  if (lat && lng) {
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`
-  }
+  if (lat && lng) return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`
   return address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}` : ''
 }
 
@@ -89,60 +87,15 @@ const MEDIA_TYPE_OPTIONS = [
 ]
 
 const EMPTY_TRIP_FORM = { name: '', status: 'planning', dateFrom: '', dateTo: '' }
-const EMPTY_FLIGHT_FORM = {
-  company: '',
-  from: '',
-  to: '',
-  date: '',
-  departureTime: '',
-  arrivalTime: '',
-  flightNumber: '',
-  bookingRef: '',
-  purchaseCost: '',
-}
+const EMPTY_FLIGHT_FORM = { company: '', from: '', to: '', date: '', departureTime: '', arrivalTime: '', flightNumber: '', bookingRef: '', purchaseCost: '' }
 const EMPTY_BAGGAGE_FORM = { label: '', qty: '1', cost: '' }
 const EMPTY_FLIGHT_DEADLINE_FORM = { title: '', date: '', notes: '' }
-const EMPTY_HOTEL_FORM = {
-  name: '',
-  phone: '',
-  address: '',
-  lat: '',
-  lng: '',
-  bookingUrl: '',
-  alternateUrl: '',
-  checkIn: '',
-  checkOut: '',
-  paidAmount: '',
-  dueAmount: '',
-  paymentMethod: '',
-  cancellationDate: '',
-}
+const EMPTY_HOTEL_FORM = { name: '', phone: '', address: '', lat: '', lng: '', bookingUrl: '', alternateUrl: '', checkIn: '', checkOut: '', paidAmount: '', dueAmount: '', paymentMethod: '', cancellationDate: '' }
 const EMPTY_HOTEL_DEADLINE_FORM = { title: '', date: '', notes: '' }
 const EMPTY_PARKING_FORM = { name: '', address: '', dateFrom: '', dateTo: '', cost: '', bookingUrl: '', notes: '' }
-const EMPTY_CAR_FORM = {
-  company: '',
-  pickupPlace: '',
-  dropoffPlace: '',
-  pickupDate: '',
-  dropoffDate: '',
-  cost: '',
-  deposit: '',
-  bookingUrl: '',
-  notes: '',
-}
+const EMPTY_CAR_FORM = { company: '', pickupPlace: '', dropoffPlace: '', pickupDate: '', dropoffDate: '', cost: '', deposit: '', bookingUrl: '', notes: '' }
 const EMPTY_DAY_FORM = { date: '', title: '', notes: '' }
-const EMPTY_PLACE_FORM = {
-  type: '',
-  name: '',
-  address: '',
-  lat: '',
-  lng: '',
-  url: '',
-  rating: '',
-  reviewNote: '',
-  imageUrl: '',
-  notes: '',
-}
+const EMPTY_PLACE_FORM = { type: '', name: '', address: '', lat: '', lng: '', url: '', rating: '', reviewNote: '', imageUrl: '', notes: '' }
 const EMPTY_MEDIA_FORM = { type: 'guide', title: '', url: '', source: '', thumbnail: '', notes: '' }
 
 export default function ViaggiPage() {
@@ -243,12 +196,7 @@ export default function ViaggiPage() {
   const handleCreateTrip = (e) => {
     e.preventDefault()
     if (!validateTrip()) return
-    addTrip({
-      name: tripForm.name.trim(),
-      status: tripForm.status,
-      dateFrom: tripForm.dateFrom,
-      dateTo: tripForm.dateTo,
-    })
+    addTrip({ name: tripForm.name.trim(), status: tripForm.status, dateFrom: tripForm.dateFrom, dateTo: tripForm.dateTo })
     setTripForm(EMPTY_TRIP_FORM)
     setTripErrors({})
   }
@@ -256,11 +204,7 @@ export default function ViaggiPage() {
   const handleAddFlight = (e) => {
     e.preventDefault()
     if (!selectedTrip || !flightForm.company.trim()) return
-    addFlight(selectedTrip.id, {
-      ...flightForm,
-      company: flightForm.company.trim(),
-      companyUrl: AIRLINE_DIRECTORY[flightForm.company.trim()] || '',
-    })
+    addFlight(selectedTrip.id, { ...flightForm, company: flightForm.company.trim(), companyUrl: AIRLINE_DIRECTORY[flightForm.company.trim()] || '' })
     setFlightForm(EMPTY_FLIGHT_FORM)
   }
 
@@ -268,11 +212,7 @@ export default function ViaggiPage() {
     if (!selectedTrip) return
     const form = baggageForms[flightId] || EMPTY_BAGGAGE_FORM
     if (!form.label?.trim()) return
-    addFlightBaggage(selectedTrip.id, flightId, {
-      label: form.label.trim(),
-      qty: form.qty || '1',
-      cost: form.cost || '',
-    })
+    addFlightBaggage(selectedTrip.id, flightId, { label: form.label.trim(), qty: form.qty || '1', cost: form.cost || '' })
     setBaggageForms((prev) => ({ ...prev, [flightId]: EMPTY_BAGGAGE_FORM }))
   }
 
@@ -280,11 +220,7 @@ export default function ViaggiPage() {
     if (!selectedTrip) return
     const form = flightDeadlineForms[flightId] || EMPTY_FLIGHT_DEADLINE_FORM
     if (!form.title?.trim()) return
-    addFlightDeadline(selectedTrip.id, flightId, {
-      title: form.title.trim(),
-      date: form.date || '',
-      notes: form.notes?.trim() || '',
-    })
+    addFlightDeadline(selectedTrip.id, flightId, { title: form.title.trim(), date: form.date || '', notes: form.notes?.trim() || '' })
     setFlightDeadlineForms((prev) => ({ ...prev, [flightId]: EMPTY_FLIGHT_DEADLINE_FORM }))
   }
 
@@ -316,11 +252,7 @@ export default function ViaggiPage() {
       setHotelDeadlineErrors((prev) => ({ ...prev, [hotelId]: errors }))
       return
     }
-    addHotelDeadline(selectedTrip.id, hotelId, {
-      title: form.title.trim(),
-      date: form.date,
-      notes: form.notes?.trim() || '',
-    })
+    addHotelDeadline(selectedTrip.id, hotelId, { title: form.title.trim(), date: form.date, notes: form.notes?.trim() || '' })
     setHotelDeadlineForms((prev) => ({ ...prev, [hotelId]: EMPTY_HOTEL_DEADLINE_FORM }))
     setHotelDeadlineErrors((prev) => ({ ...prev, [hotelId]: {} }))
   }
@@ -355,11 +287,7 @@ export default function ViaggiPage() {
   const handleAddDay = (e) => {
     e.preventDefault()
     if (!selectedTrip || !dayForm.title.trim()) return
-    addDiaryDay(selectedTrip.id, {
-      date: dayForm.date,
-      title: dayForm.title.trim(),
-      notes: dayForm.notes.trim(),
-    })
+    addDiaryDay(selectedTrip.id, { date: dayForm.date, title: dayForm.title.trim(), notes: dayForm.notes.trim() })
     setDayForm(EMPTY_DAY_FORM)
   }
 
@@ -417,11 +345,8 @@ export default function ViaggiPage() {
     <div className="page-stack">
       <section className="hero-card">
         <div className="eyebrow">Viaggi</div>
-        <h1>Pannello viaggi più leggibile, con form separati e dati visibili</h1>
-        <p>
-          Ogni blocco è organizzato per azione: prima il viaggio, poi voli, hotel, logistica,
-          diario e checklist.
-        </p>
+        <h1>Pannello viaggi completo e coerente</h1>
+        <p>Partecipanti cliccabili, parcheggi e auto inseribili, diario e media salvabili, checklist visibile.</p>
         {syncError ? <div className="app-status" style={{ marginTop: 14 }}>{syncError}</div> : null}
         <div className="hero-meta" style={{ marginTop: 14 }}>
           <span className="meta-chip">{trips.length} viaggi</span>
@@ -439,1555 +364,407 @@ export default function ViaggiPage() {
           <div className="grid-cards responsive-3">
             <label>
               <Label required>Nome viaggio</Label>
-              <input
-                className={fieldClass(tripForm.name, Boolean(tripErrors.name))}
-                value={tripForm.name}
-                onChange={(e) => setTripForm((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder="Es. Milano weekend, Londra agosto"
-              />
+              <input className={fieldClass(tripForm.name, Boolean(tripErrors.name))} value={tripForm.name} onChange={(e) => setTripForm((prev) => ({ ...prev, name: e.target.value }))} />
               <ErrorLine text={tripErrors.name} />
             </label>
 
             <label>
               <Label>Stato</Label>
-              <select
-                className={fieldClass(tripForm.status)}
-                value={tripForm.status}
-                onChange={(e) => setTripForm((prev) => ({ ...prev, status: e.target.value }))}
-              >
-                {TRIP_STATUS_OPTIONS.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
+              <select className={fieldClass(tripForm.status)} value={tripForm.status} onChange={(e) => setTripForm((prev) => ({ ...prev, status: e.target.value }))}>
+                {TRIP_STATUS_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
 
             <label>
               <Label required>Data inizio</Label>
-              <input
-                type="date"
-                className={fieldClass(tripForm.dateFrom, Boolean(tripErrors.dateFrom))}
-                value={tripForm.dateFrom}
-                onChange={(e) => setTripForm((prev) => ({ ...prev, dateFrom: e.target.value }))}
-              />
+              <input type="date" className={fieldClass(tripForm.dateFrom, Boolean(tripErrors.dateFrom))} value={tripForm.dateFrom} onChange={(e) => setTripForm((prev) => ({ ...prev, dateFrom: e.target.value }))} />
               <ErrorLine text={tripErrors.dateFrom} />
             </label>
 
             <label>
               <Label>Data fine</Label>
-              <input
-                type="date"
-                className={fieldClass(tripForm.dateTo)}
-                value={tripForm.dateTo}
-                onChange={(e) => setTripForm((prev) => ({ ...prev, dateTo: e.target.value }))}
-              />
+              <input type="date" className={fieldClass(tripForm.dateTo)} value={tripForm.dateTo} onChange={(e) => setTripForm((prev) => ({ ...prev, dateTo: e.target.value }))} />
             </label>
           </div>
 
-          <div>
-            <button type="submit" className="btn btn-p">Crea viaggio</button>
-          </div>
+          <div><button type="submit" className="btn btn-p">Crea viaggio</button></div>
         </form>
 
-        <div className="grid-cards cols-2">
-          <article className="card stack-card">
-            <div className="card-title">Viaggi disponibili</div>
-            {trips.length === 0 ? (
-              <EmptyState text="Nessun viaggio disponibile." />
-            ) : (
-              <div className="list-clean">
-                {trips.map((trip) => (
-                  <div key={trip.id} className="list-item">
-                    <div className="between">
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() => setSelectedTripId(trip.id)}
-                        style={{
-                          flex: 1,
-                          textAlign: 'left',
-                          borderColor: selectedTrip?.id === trip.id ? 'rgba(34,197,94,.38)' : undefined,
-                          background: selectedTrip?.id === trip.id ? 'rgba(34,197,94,.12)' : undefined,
-                        }}
-                      >
-                        <div className="card-subtitle">{trip.name || 'Viaggio senza nome'}</div>
-                        <div className="muted">{fmt(trip.dateFrom)} → {fmt(trip.dateTo)}</div>
-                      </button>
-
-                      <button
-                        type="button"
-                        className="btn btn-d btn-s"
-                        onClick={() => {
-                          deleteTrip(trip.id)
-                          if (selectedTripId === trip.id) setSelectedTripId('')
-                        }}
-                      >
-                        Elimina
-                      </button>
-                    </div>
-
-                    <div className="hero-meta" style={{ marginTop: 10 }}>
-                      <span className={`badge ${badgeClass(trip.status)}`}>{labelStatus(trip.status)}</span>
-                      <span className="meta-chip">{trip.flights?.length || 0} voli</span>
-                      <span className="meta-chip">{trip.hotels?.length || 0} hotel</span>
-                      <span className="meta-chip">{trip.travelDiary?.mediaLinks?.length || 0} link</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </article>
-
-          <article className="card stack-card">
-            <div className="card-title">2. Dettagli viaggio</div>
-
-            {!selectedTrip ? (
-              <EmptyState text="Seleziona o crea un viaggio." />
-            ) : (
-              <>
-                <div className="grid-cards responsive-2">
-                  <label>
-                    <Label>Nome</Label>
-                    <input
-                      className={fieldClass(selectedTrip.name)}
-                      value={selectedTrip.name || ''}
-                      onChange={(e) => updateTrip(selectedTrip.id, { name: e.target.value })}
-                    />
-                  </label>
-
-                  <label>
-                    <Label>Stato</Label>
-                    <select
-                      className={fieldClass(selectedTrip.status || 'planning')}
-                      value={selectedTrip.status || 'planning'}
-                      onChange={(e) => updateTrip(selectedTrip.id, { status: e.target.value })}
-                    >
-                      {TRIP_STATUS_OPTIONS.map((item) => (
-                        <option key={item.value} value={item.value}>
-                          {item.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label>
-                    <Label>Dal</Label>
-                    <input
-                      type="date"
-                      className={fieldClass(selectedTrip.dateFrom)}
-                      value={selectedTrip.dateFrom || ''}
-                      onChange={(e) => updateTrip(selectedTrip.id, { dateFrom: e.target.value })}
-                    />
-                  </label>
-
-                  <label>
-                    <Label>Al</Label>
-                    <input
-                      type="date"
-                      className={fieldClass(selectedTrip.dateTo)}
-                      value={selectedTrip.dateTo || ''}
-                      onChange={(e) => updateTrip(selectedTrip.id, { dateTo: e.target.value })}
-                    />
-                  </label>
-
-                  <label className="responsive-full">
-                    <Label>Note viaggio</Label>
-                    <textarea
-                      className={fieldClass(selectedTrip.notes || '')}
-                      value={selectedTrip.notes || ''}
-                      onChange={(e) => updateTrip(selectedTrip.id, { notes: e.target.value })}
-                      placeholder="Note generali, promemoria, riferimenti utili..."
-                    />
-                  </label>
-                </div>
-
-                <div className="subsection-box">
-                  <div className="card-subtitle">Partecipanti</div>
-                  <div className="family-switcher">
-                    {familyMembers.map((member) => {
-                      const active = selectedTrip.persons?.includes(member.id)
-                      return (
-                        <button
-                          key={member.id}
-                          type="button"
-                          className={`member-chip ${active ? 'active' : ''}`}
-                          onClick={() => toggleTripMember(selectedTrip.id, member.id)}
-                        >
-                          <span>{member.initials}</span>
-                          <span>{member.name} · {member.role || member.id}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                <div className="actions-row">
-                  {googleCalendarLink({
-                    title: `${selectedTrip.name} - Viaggio`,
-                    startDate: selectedTrip.dateFrom,
-                    endDate: selectedTrip.dateTo,
-                    details: selectedTrip.notes || `Viaggio ${selectedTrip.name}`,
-                  }) ? (
-                    <a
-                      className="btn"
-                      href={googleCalendarLink({
-                        title: `${selectedTrip.name} - Viaggio`,
-                        startDate: selectedTrip.dateFrom,
-                        endDate: selectedTrip.dateTo,
-                        details: selectedTrip.notes || `Viaggio ${selectedTrip.name}`,
-                      })}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Apri in Google Calendar
-                    </a>
-                  ) : null}
-                </div>
-              </>
-            )}
-          </article>
-        </div>
+        {trips.length === 0 ? (
+          <EmptyState text="Nessun viaggio creato." />
+        ) : (
+          <div className="family-switcher">
+            {trips.map((trip) => {
+              const active = selectedTrip?.id === trip.id
+              return (
+                <button key={trip.id} type="button" className={`member-chip ${active ? 'active' : ''}`} onClick={() => setSelectedTripId(trip.id)}>
+                  <strong>{trip.name || 'Viaggio'}</strong> — {labelStatus(trip.status)} {trip.dateFrom ? `(${fmt(trip.dateFrom)})` : ''}
+                </button>
+              )
+            })}
+          </div>
+        )}
       </section>
 
       {selectedTrip ? (
         <>
           <section className="card stack-card">
-            <div className="card-title">3. Voli</div>
+            <div className="between">
+              <div>
+                <div className="card-title">2. Scheda viaggio</div>
+                <div className="muted">Dati principali, stato del viaggio e partecipanti.</div>
+              </div>
+              <div className="actions-row">
+                <span className={`badge ${badgeClass(selectedTrip.status)}`}>{labelStatus(selectedTrip.status)}</span>
+                <button type="button" className="btn btn-d btn-s" onClick={() => deleteTrip(selectedTrip.id)}>Elimina viaggio</button>
+              </div>
+            </div>
 
-            <form className="form-shell form-grid" onSubmit={handleAddFlight}>
+            <div className="form-shell">
               <div className="grid-cards responsive-3">
                 <label>
-                  <Label required>Compagnia</Label>
-                  <input
-                    list="airlines-list"
-                    className={fieldClass(flightForm.company)}
-                    value={flightForm.company}
-                    onChange={(e) => setFlightForm((prev) => ({ ...prev, company: e.target.value }))}
-                    placeholder="Es. Ryanair, ITA, easyJet"
-                  />
-                  <datalist id="airlines-list">
-                    {Object.keys(AIRLINE_DIRECTORY).map((name) => (
-                      <option key={name} value={name} />
-                    ))}
-                  </datalist>
+                  <Label>Nome viaggio</Label>
+                  <input className={fieldClass(selectedTrip.name)} value={selectedTrip.name || ''} onChange={(e) => updateTrip(selectedTrip.id, { name: e.target.value })} />
                 </label>
-
                 <label>
-                  <Label>Da</Label>
-                  <input
-                    className={fieldClass(flightForm.from)}
-                    value={flightForm.from}
-                    onChange={(e) => setFlightForm((prev) => ({ ...prev, from: e.target.value }))}
-                    placeholder="Es. FCO"
-                  />
+                  <Label>Stato</Label>
+                  <select className={fieldClass(selectedTrip.status)} value={selectedTrip.status || 'planning'} onChange={(e) => updateTrip(selectedTrip.id, { status: e.target.value })}>
+                    {TRIP_STATUS_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  </select>
                 </label>
-
                 <label>
-                  <Label>A</Label>
-                  <input
-                    className={fieldClass(flightForm.to)}
-                    value={flightForm.to}
-                    onChange={(e) => setFlightForm((prev) => ({ ...prev, to: e.target.value }))}
-                    placeholder="Es. TRN"
-                  />
+                  <Label>Inizio</Label>
+                  <input type="date" className={fieldClass(selectedTrip.dateFrom)} value={selectedTrip.dateFrom || ''} onChange={(e) => updateTrip(selectedTrip.id, { dateFrom: e.target.value })} />
                 </label>
-
                 <label>
-                  <Label>Data</Label>
-                  <input
-                    type="date"
-                    className={fieldClass(flightForm.date)}
-                    value={flightForm.date}
-                    onChange={(e) => setFlightForm((prev) => ({ ...prev, date: e.target.value }))}
-                  />
+                  <Label>Fine</Label>
+                  <input type="date" className={fieldClass(selectedTrip.dateTo)} value={selectedTrip.dateTo || ''} onChange={(e) => updateTrip(selectedTrip.id, { dateTo: e.target.value })} />
                 </label>
-
-                <label>
-                  <Label>Partenza</Label>
-                  <input
-                    type="time"
-                    className={fieldClass(flightForm.departureTime)}
-                    value={flightForm.departureTime}
-                    onChange={(e) => setFlightForm((prev) => ({ ...prev, departureTime: e.target.value }))}
-                  />
-                </label>
-
-                <label>
-                  <Label>Arrivo</Label>
-                  <input
-                    type="time"
-                    className={fieldClass(flightForm.arrivalTime)}
-                    value={flightForm.arrivalTime}
-                    onChange={(e) => setFlightForm((prev) => ({ ...prev, arrivalTime: e.target.value }))}
-                  />
-                </label>
-
-                <label>
-                  <Label>Numero volo</Label>
-                  <input
-                    className={fieldClass(flightForm.flightNumber)}
-                    value={flightForm.flightNumber}
-                    onChange={(e) => setFlightForm((prev) => ({ ...prev, flightNumber: e.target.value }))}
-                  />
-                </label>
-
-                <label>
-                  <Label>Prenotazione</Label>
-                  <input
-                    className={fieldClass(flightForm.bookingRef)}
-                    value={flightForm.bookingRef}
-                    onChange={(e) => setFlightForm((prev) => ({ ...prev, bookingRef: e.target.value }))}
-                  />
-                </label>
-
-                <label>
-                  <Label>Costo</Label>
-                  <input
-                    className={fieldClass(flightForm.purchaseCost)}
-                    value={flightForm.purchaseCost}
-                    onChange={(e) => setFlightForm((prev) => ({ ...prev, purchaseCost: e.target.value }))}
-                    placeholder="Es. 89,90"
-                  />
-                </label>
-              </div>
-
-              <div>
-                <button className="btn btn-p" type="submit">Aggiungi volo</button>
-              </div>
-            </form>
-
-            {selectedTrip.flights?.length === 0 ? (
-              <EmptyState text="Nessun volo registrato." />
-            ) : (
-              <div className="timeline-list">
-                {selectedTrip.flights.map((flight) => (
-                  <div key={flight.id} className="timeline-item">
-                    <div className="between">
-                      <div>
-                        <div className="card-subtitle">
-                          {flight.company || 'Compagnia'} · {flight.from} → {flight.to}
-                        </div>
-                        <div className="muted">
-                          {fmt(flight.date)} {flight.departureTime} {flight.arrivalTime}
-                        </div>
-                      </div>
-
-                      <div className="actions-row">
-                        <button
-                          type="button"
-                          className="btn btn-s"
-                          onClick={() => invertFlightRoute(selectedTrip.id, flight.id)}
-                        >
-                          Inverti tratta
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-d btn-s"
-                          onClick={() => deleteFlight(selectedTrip.id, flight.id)}
-                        >
-                          Elimina
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="grid-cards responsive-3">
-                      <label>
-                        <Label>Compagnia</Label>
-                        <input
-                          className={fieldClass(flight.company)}
-                          value={flight.company || ''}
-                          onChange={(e) => updateFlight(selectedTrip.id, flight.id, { company: e.target.value })}
-                        />
-                      </label>
-
-                      <label>
-                        <Label>Da</Label>
-                        <input
-                          className={fieldClass(flight.from)}
-                          value={flight.from || ''}
-                          onChange={(e) => updateFlight(selectedTrip.id, flight.id, { from: e.target.value })}
-                        />
-                      </label>
-
-                      <label>
-                        <Label>A</Label>
-                        <input
-                          className={fieldClass(flight.to)}
-                          value={flight.to || ''}
-                          onChange={(e) => updateFlight(selectedTrip.id, flight.id, { to: e.target.value })}
-                        />
-                      </label>
-
-                      <label>
-                        <Label>Data</Label>
-                        <input
-                          type="date"
-                          className={fieldClass(flight.date)}
-                          value={flight.date || ''}
-                          onChange={(e) => updateFlight(selectedTrip.id, flight.id, { date: e.target.value })}
-                        />
-                      </label>
-
-                      <label>
-                        <Label>Partenza</Label>
-                        <input
-                          type="time"
-                          className={fieldClass(flight.departureTime)}
-                          value={flight.departureTime || ''}
-                          onChange={(e) => updateFlight(selectedTrip.id, flight.id, { departureTime: e.target.value })}
-                        />
-                      </label>
-
-                      <label>
-                        <Label>Arrivo</Label>
-                        <input
-                          type="time"
-                          className={fieldClass(flight.arrivalTime)}
-                          value={flight.arrivalTime || ''}
-                          onChange={(e) => updateFlight(selectedTrip.id, flight.id, { arrivalTime: e.target.value })}
-                        />
-                      </label>
-
-                      <label>
-                        <Label>Numero volo</Label>
-                        <input
-                          className={fieldClass(flight.flightNumber)}
-                          value={flight.flightNumber || ''}
-                          onChange={(e) => updateFlight(selectedTrip.id, flight.id, { flightNumber: e.target.value })}
-                        />
-                      </label>
-
-                      <label>
-                        <Label>Prenotazione</Label>
-                        <input
-                          className={fieldClass(flight.bookingRef)}
-                          value={flight.bookingRef || ''}
-                          onChange={(e) => updateFlight(selectedTrip.id, flight.id, { bookingRef: e.target.value })}
-                        />
-                      </label>
-
-                      <label>
-                        <Label>Costo</Label>
-                        <input
-                          className={fieldClass(flight.purchaseCost)}
-                          value={flight.purchaseCost || ''}
-                          onChange={(e) => updateFlight(selectedTrip.id, flight.id, { purchaseCost: e.target.value })}
-                        />
-                      </label>
-                    </div>
-
-                    <div className="actions-row">
-                      {flight.companyUrl ? (
-                        <a className="btn btn-s" href={flight.companyUrl} target="_blank" rel="noopener noreferrer">
-                          Sito compagnia
-                        </a>
-                      ) : null}
-                    </div>
-
-                    <div className="subsection-box">
-                      <div className="card-subtitle">Bagagli</div>
-
-                      {flight.baggage?.length === 0 ? (
-                        <EmptyState text="Nessun bagaglio registrato." />
-                      ) : (
-                        <div className="list-clean">
-                          {flight.baggage.map((bag) => (
-                            <div key={bag.id} className="list-item">
-                              <div className="between">
-                                <div>
-                                  <div className="card-subtitle">{bag.label || 'Bagaglio'}</div>
-                                  <div className="muted">Quantità {bag.qty || 1} · Costo {bag.cost || '—'}</div>
-                                </div>
-                                <button
-                                  type="button"
-                                  className="btn btn-d btn-s"
-                                  onClick={() => deleteFlightBaggage(selectedTrip.id, flight.id, bag.id)}
-                                >
-                                  Elimina
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      <div className="inline-form">
-                        <input
-                          className={fieldClass((baggageForms[flight.id] || EMPTY_BAGGAGE_FORM).label)}
-                          value={(baggageForms[flight.id] || EMPTY_BAGGAGE_FORM).label}
-                          onChange={(e) =>
-                            setBaggageForms((prev) => ({
-                              ...prev,
-                              [flight.id]: {
-                                ...(prev[flight.id] || EMPTY_BAGGAGE_FORM),
-                                label: e.target.value,
-                              },
-                            }))
-                          }
-                          placeholder="Tipo bagaglio"
-                        />
-                        <input
-                          className={fieldClass((baggageForms[flight.id] || EMPTY_BAGGAGE_FORM).qty)}
-                          value={(baggageForms[flight.id] || EMPTY_BAGGAGE_FORM).qty}
-                          onChange={(e) =>
-                            setBaggageForms((prev) => ({
-                              ...prev,
-                              [flight.id]: {
-                                ...(prev[flight.id] || EMPTY_BAGGAGE_FORM),
-                                qty: e.target.value,
-                              },
-                            }))
-                          }
-                          placeholder="Q.tà"
-                        />
-                        <input
-                          className={fieldClass((baggageForms[flight.id] || EMPTY_BAGGAGE_FORM).cost)}
-                          value={(baggageForms[flight.id] || EMPTY_BAGGAGE_FORM).cost}
-                          onChange={(e) =>
-                            setBaggageForms((prev) => ({
-                              ...prev,
-                              [flight.id]: {
-                                ...(prev[flight.id] || EMPTY_BAGGAGE_FORM),
-                                cost: e.target.value,
-                              },
-                            }))
-                          }
-                          placeholder="Costo"
-                        />
-                        <button type="button" className="btn" onClick={() => handleAddFlightBaggage(flight.id)}>
-                          Aggiungi bagaglio
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="subsection-box">
-                      <div className="card-subtitle">Scadenze volo</div>
-
-                      {flight.deadlines?.length === 0 ? (
-                        <EmptyState text="Nessuna scadenza." />
-                      ) : (
-                        <div className="list-clean">
-                          {flight.deadlines.map((deadline) => (
-                            <div key={deadline.id} className="list-item">
-                              <div className="between">
-                                <div>
-                                  <div className="card-subtitle">{deadline.title || 'Scadenza'}</div>
-                                  <div className="muted">{fmt(deadline.date)}</div>
-                                </div>
-                                <button
-                                  type="button"
-                                  className="btn btn-d btn-s"
-                                  onClick={() => deleteFlightDeadline(selectedTrip.id, flight.id, deadline.id)}
-                                >
-                                  Elimina
-                                </button>
-                              </div>
-                              {deadline.notes ? <div>{deadline.notes}</div> : null}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      <div className="grid-cards responsive-3">
-                        <input
-                          className={fieldClass((flightDeadlineForms[flight.id] || EMPTY_FLIGHT_DEADLINE_FORM).title)}
-                          value={(flightDeadlineForms[flight.id] || EMPTY_FLIGHT_DEADLINE_FORM).title}
-                          onChange={(e) =>
-                            setFlightDeadlineForms((prev) => ({
-                              ...prev,
-                              [flight.id]: {
-                                ...(prev[flight.id] || EMPTY_FLIGHT_DEADLINE_FORM),
-                                title: e.target.value,
-                              },
-                            }))
-                          }
-                          placeholder="Titolo scadenza"
-                        />
-                        <input
-                          type="date"
-                          className={fieldClass((flightDeadlineForms[flight.id] || EMPTY_FLIGHT_DEADLINE_FORM).date)}
-                          value={(flightDeadlineForms[flight.id] || EMPTY_FLIGHT_DEADLINE_FORM).date}
-                          onChange={(e) =>
-                            setFlightDeadlineForms((prev) => ({
-                              ...prev,
-                              [flight.id]: {
-                                ...(prev[flight.id] || EMPTY_FLIGHT_DEADLINE_FORM),
-                                date: e.target.value,
-                              },
-                            }))
-                          }
-                        />
-                        <input
-                          className={fieldClass((flightDeadlineForms[flight.id] || EMPTY_FLIGHT_DEADLINE_FORM).notes)}
-                          value={(flightDeadlineForms[flight.id] || EMPTY_FLIGHT_DEADLINE_FORM).notes}
-                          onChange={(e) =>
-                            setFlightDeadlineForms((prev) => ({
-                              ...prev,
-                              [flight.id]: {
-                                ...(prev[flight.id] || EMPTY_FLIGHT_DEADLINE_FORM),
-                                notes: e.target.value,
-                              },
-                            }))
-                          }
-                          placeholder="Note"
-                        />
-                      </div>
-
-                      <button type="button" className="btn" onClick={() => handleAddFlightDeadline(flight.id)}>
-                        Aggiungi scadenza
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="card stack-card">
-            <div className="card-title">4. Hotel</div>
-
-            <form className="form-shell form-grid" onSubmit={handleAddHotel}>
-              <div className="grid-cards responsive-2">
-                <label>
-                  <Label required>Nome hotel</Label>
-                  <input
-                    className={fieldClass(hotelForm.name, Boolean(hotelErrors.name))}
-                    value={hotelForm.name}
-                    onChange={(e) => setHotelForm((prev) => ({ ...prev, name: e.target.value }))}
-                  />
-                  <ErrorLine text={hotelErrors.name} />
-                </label>
-
-                <label>
-                  <Label>Telefono</Label>
-                  <input
-                    className={fieldClass(hotelForm.phone)}
-                    value={hotelForm.phone}
-                    onChange={(e) => setHotelForm((prev) => ({ ...prev, phone: e.target.value }))}
-                  />
-                </label>
-
                 <label className="responsive-full">
-                  <Label>Indirizzo</Label>
-                  <input
-                    className={fieldClass(hotelForm.address)}
-                    value={hotelForm.address}
-                    onChange={(e) => setHotelForm((prev) => ({ ...prev, address: e.target.value }))}
-                  />
-                </label>
-
-                <label>
-                  <Label>Latitudine</Label>
-                  <input
-                    className={fieldClass(hotelForm.lat)}
-                    value={hotelForm.lat}
-                    onChange={(e) => setHotelForm((prev) => ({ ...prev, lat: e.target.value }))}
-                  />
-                </label>
-
-                <label>
-                  <Label>Longitudine</Label>
-                  <input
-                    className={fieldClass(hotelForm.lng)}
-                    value={hotelForm.lng}
-                    onChange={(e) => setHotelForm((prev) => ({ ...prev, lng: e.target.value }))}
-                  />
-                </label>
-
-                <label>
-                  <Label>Metodo pagamento</Label>
-                  <input
-                    className={fieldClass(hotelForm.paymentMethod)}
-                    value={hotelForm.paymentMethod}
-                    onChange={(e) => setHotelForm((prev) => ({ ...prev, paymentMethod: e.target.value }))}
-                  />
-                </label>
-
-                <label>
-                  <Label>Check-in</Label>
-                  <input
-                    type="date"
-                    className={fieldClass(hotelForm.checkIn)}
-                    value={hotelForm.checkIn}
-                    onChange={(e) => setHotelForm((prev) => ({ ...prev, checkIn: e.target.value }))}
-                  />
-                </label>
-
-                <label>
-                  <Label>Check-out</Label>
-                  <input
-                    type="date"
-                    className={fieldClass(hotelForm.checkOut)}
-                    value={hotelForm.checkOut}
-                    onChange={(e) => setHotelForm((prev) => ({ ...prev, checkOut: e.target.value }))}
-                  />
-                </label>
-
-                <label>
-                  <Label>Cancellazione entro</Label>
-                  <input
-                    type="date"
-                    className={fieldClass(hotelForm.cancellationDate)}
-                    value={hotelForm.cancellationDate}
-                    onChange={(e) => setHotelForm((prev) => ({ ...prev, cancellationDate: e.target.value }))}
-                  />
-                </label>
-
-                <label>
-                  <Label>Importo pagato</Label>
-                  <input
-                    className={fieldClass(hotelForm.paidAmount)}
-                    value={hotelForm.paidAmount}
-                    onChange={(e) => setHotelForm((prev) => ({ ...prev, paidAmount: e.target.value }))}
-                  />
-                </label>
-
-                <label>
-                  <Label>Importo da pagare</Label>
-                  <input
-                    className={fieldClass(hotelForm.dueAmount)}
-                    value={hotelForm.dueAmount}
-                    onChange={(e) => setHotelForm((prev) => ({ ...prev, dueAmount: e.target.value }))}
-                  />
-                </label>
-
-                <label>
-                  <Label>Link prenotazione</Label>
-                  <input
-                    className={fieldClass(hotelForm.bookingUrl)}
-                    value={hotelForm.bookingUrl}
-                    onChange={(e) => setHotelForm((prev) => ({ ...prev, bookingUrl: e.target.value }))}
-                  />
-                </label>
-
-                <label>
-                  <Label>Link alternativo</Label>
-                  <input
-                    className={fieldClass(hotelForm.alternateUrl)}
-                    value={hotelForm.alternateUrl}
-                    onChange={(e) => setHotelForm((prev) => ({ ...prev, alternateUrl: e.target.value }))}
-                  />
+                  <Label>Note viaggio</Label>
+                  <textarea className={fieldClass(selectedTrip.notes || '')} value={selectedTrip.notes || ''} onChange={(e) => updateTrip(selectedTrip.id, { notes: e.target.value })} />
                 </label>
               </div>
 
-              <div>
-                <button className="btn btn-p" type="submit">Aggiungi hotel</button>
-              </div>
-            </form>
-
-            {selectedTrip.hotels?.length === 0 ? (
-              <EmptyState text="Nessun hotel registrato." />
-            ) : (
-              <div className="timeline-list">
-                {selectedTrip.hotels.map((hotel) => {
-                  const mapUrl = mapsLink(hotel.address, hotel.lat, hotel.lng)
-                  const dirUrl = directionsLink(hotel.address, hotel.lat, hotel.lng)
-                  const deadlineErrors = hotelDeadlineErrors[hotel.id] || {}
-
+              <div className="section-divider" />
+              <div className="form-section-title">Partecipanti</div>
+              <div className="family-switcher">
+                {familyMembers.map((member) => {
+                  const included = (selectedTrip.persons || []).includes(member.id)
                   return (
-                    <div key={hotel.id} className="timeline-item">
-                      <div className="between">
-                        <div>
-                          <div className="card-subtitle">{hotel.name || 'Hotel'}</div>
-                          <div className="muted">{hotel.address || 'Indirizzo non indicato'}</div>
-                        </div>
-                        <button
-                          type="button"
-                          className="btn btn-d btn-s"
-                          onClick={() => deleteHotel(selectedTrip.id, hotel.id)}
-                        >
-                          Elimina
-                        </button>
-                      </div>
-
-                      <div className="grid-cards responsive-2">
-                        <label>
-                          <Label>Nome</Label>
-                          <input
-                            className={fieldClass(hotel.name)}
-                            value={hotel.name || ''}
-                            onChange={(e) => updateHotel(selectedTrip.id, hotel.id, { name: e.target.value })}
-                          />
-                        </label>
-
-                        <label>
-                          <Label>Telefono</Label>
-                          <input
-                            className={fieldClass(hotel.phone)}
-                            value={hotel.phone || ''}
-                            onChange={(e) => updateHotel(selectedTrip.id, hotel.id, { phone: e.target.value })}
-                          />
-                        </label>
-
-                        <label className="responsive-full">
-                          <Label>Indirizzo</Label>
-                          <input
-                            className={fieldClass(hotel.address)}
-                            value={hotel.address || ''}
-                            onChange={(e) => updateHotel(selectedTrip.id, hotel.id, { address: e.target.value })}
-                          />
-                        </label>
-
-                        <label>
-                          <Label>Check-in</Label>
-                          <input
-                            type="date"
-                            className={fieldClass(hotel.checkIn)}
-                            value={hotel.checkIn || ''}
-                            onChange={(e) => updateHotel(selectedTrip.id, hotel.id, { checkIn: e.target.value })}
-                          />
-                        </label>
-
-                        <label>
-                          <Label>Check-out</Label>
-                          <input
-                            type="date"
-                            className={fieldClass(hotel.checkOut)}
-                            value={hotel.checkOut || ''}
-                            onChange={(e) => updateHotel(selectedTrip.id, hotel.id, { checkOut: e.target.value })}
-                          />
-                        </label>
-
-                        <label>
-                          <Label>Pagato</Label>
-                          <input
-                            className={fieldClass(hotel.paidAmount)}
-                            value={hotel.paidAmount || ''}
-                            onChange={(e) => updateHotel(selectedTrip.id, hotel.id, { paidAmount: e.target.value })}
-                          />
-                        </label>
-
-                        <label>
-                          <Label>Da pagare</Label>
-                          <input
-                            className={fieldClass(hotel.dueAmount)}
-                            value={hotel.dueAmount || ''}
-                            onChange={(e) => updateHotel(selectedTrip.id, hotel.id, { dueAmount: e.target.value })}
-                          />
-                        </label>
-
-                        <label>
-                          <Label>Metodo pagamento</Label>
-                          <input
-                            className={fieldClass(hotel.paymentMethod)}
-                            value={hotel.paymentMethod || ''}
-                            onChange={(e) => updateHotel(selectedTrip.id, hotel.id, { paymentMethod: e.target.value })}
-                          />
-                        </label>
-
-                        <label>
-                          <Label>Cancellazione entro</Label>
-                          <input
-                            type="date"
-                            className={fieldClass(hotel.cancellationDate)}
-                            value={hotel.cancellationDate || ''}
-                            onChange={(e) => updateHotel(selectedTrip.id, hotel.id, { cancellationDate: e.target.value })}
-                          />
-                        </label>
-
-                        <label>
-                          <Label>Link prenotazione</Label>
-                          <input
-                            className={fieldClass(hotel.bookingUrl)}
-                            value={hotel.bookingUrl || ''}
-                            onChange={(e) => updateHotel(selectedTrip.id, hotel.id, { bookingUrl: e.target.value })}
-                          />
-                        </label>
-
-                        <label>
-                          <Label>Link alternativo</Label>
-                          <input
-                            className={fieldClass(hotel.alternateUrl)}
-                            value={hotel.alternateUrl || ''}
-                            onChange={(e) => updateHotel(selectedTrip.id, hotel.id, { alternateUrl: e.target.value })}
-                          />
-                        </label>
-                      </div>
-
-                      <div className="actions-row">
-                        {hotel.bookingUrl ? (
-                          <a className="btn btn-s" href={hotel.bookingUrl} target="_blank" rel="noopener noreferrer">
-                            Apri prenotazione
-                          </a>
-                        ) : null}
-                        {hotel.alternateUrl ? (
-                          <a className="btn btn-s" href={hotel.alternateUrl} target="_blank" rel="noopener noreferrer">
-                            Apri link alternativo
-                          </a>
-                        ) : null}
-                        {mapUrl ? (
-                          <a className="btn btn-s" href={mapUrl} target="_blank" rel="noopener noreferrer">
-                            Mappa
-                          </a>
-                        ) : null}
-                        {dirUrl ? (
-                          <a className="btn btn-s" href={dirUrl} target="_blank" rel="noopener noreferrer">
-                            Indicazioni
-                          </a>
-                        ) : null}
-                      </div>
-
-                      <div className="subsection-box">
-                        <div className="card-subtitle">Scadenze hotel</div>
-
-                        {hotel.deadlines?.length === 0 ? (
-                          <EmptyState text="Nessuna scadenza hotel." />
-                        ) : (
-                          <div className="list-clean">
-                            {hotel.deadlines.map((deadline) => (
-                              <div key={deadline.id} className="list-item">
-                                <div className="between">
-                                  <div>
-                                    <div className="card-subtitle">{deadline.title || 'Scadenza'}</div>
-                                    <div className="muted">{fmt(deadline.date)}</div>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    className="btn btn-d btn-s"
-                                    onClick={() => deleteHotelDeadline(selectedTrip.id, hotel.id, deadline.id)}
-                                  >
-                                    Elimina
-                                  </button>
-                                </div>
-                                {deadline.notes ? <div>{deadline.notes}</div> : null}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="grid-cards responsive-3">
-                          <label>
-                            <Label required>Titolo</Label>
-                            <input
-                              className={fieldClass(
-                                (hotelDeadlineForms[hotel.id] || EMPTY_HOTEL_DEADLINE_FORM).title,
-                                Boolean(deadlineErrors.title),
-                              )}
-                              value={(hotelDeadlineForms[hotel.id] || EMPTY_HOTEL_DEADLINE_FORM).title}
-                              onChange={(e) =>
-                                setHotelDeadlineForms((prev) => ({
-                                  ...prev,
-                                  [hotel.id]: {
-                                    ...(prev[hotel.id] || EMPTY_HOTEL_DEADLINE_FORM),
-                                    title: e.target.value,
-                                  },
-                                }))
-                              }
-                              placeholder="Titolo scadenza"
-                            />
-                            <ErrorLine text={deadlineErrors.title} />
-                          </label>
-
-                          <label>
-                            <Label required>Data</Label>
-                            <input
-                              type="date"
-                              className={fieldClass(
-                                (hotelDeadlineForms[hotel.id] || EMPTY_HOTEL_DEADLINE_FORM).date,
-                                Boolean(deadlineErrors.date),
-                              )}
-                              value={(hotelDeadlineForms[hotel.id] || EMPTY_HOTEL_DEADLINE_FORM).date}
-                              onChange={(e) =>
-                                setHotelDeadlineForms((prev) => ({
-                                  ...prev,
-                                  [hotel.id]: {
-                                    ...(prev[hotel.id] || EMPTY_HOTEL_DEADLINE_FORM),
-                                    date: e.target.value,
-                                  },
-                                }))
-                              }
-                            />
-                            <ErrorLine text={deadlineErrors.date} />
-                          </label>
-
-                          <label>
-                            <Label>Note</Label>
-                            <input
-                              className={fieldClass((hotelDeadlineForms[hotel.id] || EMPTY_HOTEL_DEADLINE_FORM).notes)}
-                              value={(hotelDeadlineForms[hotel.id] || EMPTY_HOTEL_DEADLINE_FORM).notes}
-                              onChange={(e) =>
-                                setHotelDeadlineForms((prev) => ({
-                                  ...prev,
-                                  [hotel.id]: {
-                                    ...(prev[hotel.id] || EMPTY_HOTEL_DEADLINE_FORM),
-                                    notes: e.target.value,
-                                  },
-                                }))
-                              }
-                              placeholder="Note"
-                            />
-                          </label>
-                        </div>
-
-                        <button type="button" className="btn" onClick={() => handleAddHotelDeadline(hotel.id)}>
-                          Aggiungi scadenza
-                        </button>
-                      </div>
-                    </div>
+                    <button key={member.id} type="button" className={`member-chip ${included ? 'active' : ''}`} onClick={() => toggleTripMember(selectedTrip.id, member.id)}>
+                      <span>{member.initials}</span>
+                      <span>{member.name || member.role || 'Membro'}</span>
+                    </button>
                   )
                 })}
               </div>
-            )}
+            </div>
           </section>
 
           <section className="grid-cards cols-2">
             <article className="card stack-card">
-              <div className="card-title">5. Parcheggi</div>
-
-              <form className="form-shell form-grid" onSubmit={handleAddParking}>
-                <label>
-                  <Label required>Nome parcheggio</Label>
-                  <input
-                    className={fieldClass(parkingForm.name)}
-                    value={parkingForm.name}
-                    onChange={(e) => setParkingForm((prev) => ({ ...prev, name: e.target.value }))}
-                  />
-                </label>
-
-                <label>
-                  <Label>Indirizzo</Label>
-                  <input
-                    className={fieldClass(parkingForm.address)}
-                    value={parkingForm.address}
-                    onChange={(e) => setParkingForm((prev) => ({ ...prev, address: e.target.value }))}
-                  />
-                </label>
-
-                <div className="grid-cards responsive-2">
-                  <label>
-                    <Label>Dal</Label>
-                    <input
-                      type="date"
-                      className={fieldClass(parkingForm.dateFrom)}
-                      value={parkingForm.dateFrom}
-                      onChange={(e) => setParkingForm((prev) => ({ ...prev, dateFrom: e.target.value }))}
-                    />
-                  </label>
-
-                  <label>
-                    <Label>Al</Label>
-                    <input
-                      type="date"
-                      className={fieldClass(parkingForm.dateTo)}
-                      value={parkingForm.dateTo}
-                      onChange={(e) => setParkingForm((prev) => ({ ...prev, dateTo: e.target.value }))}
-                    />
-                  </label>
+              <div className="card-title">3. Volo</div>
+              <form className="form-shell form-grid" onSubmit={handleAddFlight}>
+                <div className="grid-cards responsive-3">
+                  <label><Label required>Compagnia</Label><input className={fieldClass(flightForm.company)} value={flightForm.company} onChange={(e) => setFlightForm((prev) => ({ ...prev, company: e.target.value }))} /></label>
+                  <label><Label>Aeroporto partenza</Label><input className={fieldClass(flightForm.from)} value={flightForm.from} onChange={(e) => setFlightForm((prev) => ({ ...prev, from: e.target.value }))} /></label>
+                  <label><Label>Aeroporto arrivo</Label><input className={fieldClass(flightForm.to)} value={flightForm.to} onChange={(e) => setFlightForm((prev) => ({ ...prev, to: e.target.value }))} /></label>
+                  <label><Label>Data</Label><input type="date" className={fieldClass(flightForm.date)} value={flightForm.date} onChange={(e) => setFlightForm((prev) => ({ ...prev, date: e.target.value }))} /></label>
+                  <label><Label>Ora partenza</Label><input type="time" className={fieldClass(flightForm.departureTime)} value={flightForm.departureTime} onChange={(e) => setFlightForm((prev) => ({ ...prev, departureTime: e.target.value }))} /></label>
+                  <label><Label>Ora arrivo</Label><input type="time" className={fieldClass(flightForm.arrivalTime)} value={flightForm.arrivalTime} onChange={(e) => setFlightForm((prev) => ({ ...prev, arrivalTime: e.target.value }))} /></label>
+                  <label><Label>Numero volo</Label><input className={fieldClass(flightForm.flightNumber)} value={flightForm.flightNumber} onChange={(e) => setFlightForm((prev) => ({ ...prev, flightNumber: e.target.value }))} /></label>
+                  <label><Label>PNR / prenotazione</Label><input className={fieldClass(flightForm.bookingRef)} value={flightForm.bookingRef} onChange={(e) => setFlightForm((prev) => ({ ...prev, bookingRef: e.target.value }))} /></label>
+                  <label><Label>Costo</Label><input className={fieldClass(flightForm.purchaseCost)} value={flightForm.purchaseCost} onChange={(e) => setFlightForm((prev) => ({ ...prev, purchaseCost: e.target.value }))} /></label>
                 </div>
-
-                <label>
-                  <Label>Costo</Label>
-                  <input
-                    className={fieldClass(parkingForm.cost)}
-                    value={parkingForm.cost}
-                    onChange={(e) => setParkingForm((prev) => ({ ...prev, cost: e.target.value }))}
-                  />
-                </label>
-
-                <label>
-                  <Label>Link prenotazione</Label>
-                  <input
-                    className={fieldClass(parkingForm.bookingUrl)}
-                    value={parkingForm.bookingUrl}
-                    onChange={(e) => setParkingForm((prev) => ({ ...prev, bookingUrl: e.target.value }))}
-                  />
-                </label>
-
-                <label>
-                  <Label>Note</Label>
-                  <textarea
-                    className={fieldClass(parkingForm.notes)}
-                    value={parkingForm.notes}
-                    onChange={(e) => setParkingForm((prev) => ({ ...prev, notes: e.target.value }))}
-                  />
-                </label>
-
-                <div>
-                  <button className="btn btn-p" type="submit">Aggiungi parcheggio</button>
-                </div>
+                <div><button type="submit" className="btn btn-p">Aggiungi volo</button></div>
               </form>
 
-              {selectedTrip.parkingReservations?.length === 0 ? (
-                <EmptyState text="Nessun parcheggio registrato." />
-              ) : (
-                <div className="list-clean">
-                  {selectedTrip.parkingReservations.map((item) => (
-                    <div key={item.id} className="list-item">
-                      <div className="between">
-                        <div>
-                          <div className="card-subtitle">{item.name || 'Parcheggio'}</div>
-                          <div className="muted">{fmt(item.dateFrom)} → {fmt(item.dateTo)}</div>
+              {selectedTrip.flights?.length ? (
+                <div className="timeline-list">
+                  {selectedTrip.flights.map((flight) => {
+                    const baggageForm = baggageForms[flight.id] || EMPTY_BAGGAGE_FORM
+                    const flightDeadlineForm = flightDeadlineForms[flight.id] || EMPTY_FLIGHT_DEADLINE_FORM
+
+                    return (
+                      <div key={flight.id} className="timeline-item">
+                        <div className="between">
+                          <div>
+                            <div className="card-subtitle">{flight.company || 'Volo'} {flight.flightNumber ? `• ${flight.flightNumber}` : ''}</div>
+                            <div className="muted">{flight.from || '—'} → {flight.to || '—'} • {fmt(flight.date)}</div>
+                          </div>
+                          <div className="actions-row">
+                            <button type="button" className="btn btn-s" onClick={() => invertFlightRoute(selectedTrip.id, flight.id)}>Inverti tratta</button>
+                            <button type="button" className="btn btn-d btn-s" onClick={() => deleteFlight(selectedTrip.id, flight.id)}>Elimina</button>
+                          </div>
                         </div>
 
-                        <button
-                          type="button"
-                          className="btn btn-d btn-s"
-                          onClick={() => deleteParkingReservation(selectedTrip.id, item.id)}
-                        >
-                          Elimina
-                        </button>
+                        <div className="subsection-box">
+                          <div className="card-subtitle">Bagagli</div>
+                          <div className="inline-form">
+                            <input className={fieldClass(baggageForm.label)} value={baggageForm.label} onChange={(e) => setBaggageForms((prev) => ({ ...prev, [flight.id]: { ...baggageForm, label: e.target.value } }))} placeholder="Tipo bagaglio" />
+                            <input className={fieldClass(baggageForm.qty)} value={baggageForm.qty} onChange={(e) => setBaggageForms((prev) => ({ ...prev, [flight.id]: { ...baggageForm, qty: e.target.value } }))} placeholder="Q.tà" />
+                            <input className={fieldClass(baggageForm.cost)} value={baggageForm.cost} onChange={(e) => setBaggageForms((prev) => ({ ...prev, [flight.id]: { ...baggageForm, cost: e.target.value } }))} placeholder="Costo" />
+                            <button type="button" className="btn btn-p" onClick={() => handleAddFlightBaggage(flight.id)}>Aggiungi</button>
+                          </div>
+
+                          <div className="timeline-list" style={{ marginTop: 10 }}>
+                            {(flight.baggage || []).map((item) => (
+                              <div key={item.id} className="timeline-item compact between">
+                                <div>{item.label} · Q.tà {item.qty || 1} {item.cost ? `· ${item.cost}` : ''}</div>
+                                <button type="button" className="btn btn-d btn-s" onClick={() => deleteFlightBaggage(selectedTrip.id, flight.id, item.id)}>Elimina</button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="subsection-box">
+                          <div className="card-subtitle">Scadenze volo</div>
+                          <div className="inline-form">
+                            <input className={fieldClass(flightDeadlineForm.title)} value={flightDeadlineForm.title} onChange={(e) => setFlightDeadlineForms((prev) => ({ ...prev, [flight.id]: { ...flightDeadlineForm, title: e.target.value } }))} placeholder="Titolo scadenza" />
+                            <input type="date" className={fieldClass(flightDeadlineForm.date)} value={flightDeadlineForm.date} onChange={(e) => setFlightDeadlineForms((prev) => ({ ...prev, [flight.id]: { ...flightDeadlineForm, date: e.target.value } }))} />
+                            <input className={fieldClass(flightDeadlineForm.notes)} value={flightDeadlineForm.notes} onChange={(e) => setFlightDeadlineForms((prev) => ({ ...prev, [flight.id]: { ...flightDeadlineForm, notes: e.target.value } }))} placeholder="Note" />
+                            <button type="button" className="btn btn-p" onClick={() => handleAddFlightDeadline(flight.id)}>Aggiungi</button>
+                          </div>
+
+                          <div className="timeline-list" style={{ marginTop: 10 }}>
+                            {(flight.deadlines || []).map((item) => (
+                              <div key={item.id} className="timeline-item compact between">
+                                <div>{item.title} · {fmt(item.date)} {item.notes ? `· ${item.notes}` : ''}</div>
+                                <div className="actions-row">
+                                  {item.date ? <a className="btn btn-s" href={googleCalendarLink({ title: item.title, startDate: item.date, details: item.notes })} target="_blank" rel="noopener noreferrer">Calendar</a> : null}
+                                  <button type="button" className="btn btn-d btn-s" onClick={() => deleteFlightDeadline(selectedTrip.id, flight.id, item.id)}>Elimina</button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-
-                      <div className="muted">{item.address}</div>
-                      {item.notes ? <div>{item.notes}</div> : null}
-
-                      <div className="actions-row">
-                        {item.bookingUrl ? (
-                          <a className="btn btn-s" href={item.bookingUrl} target="_blank" rel="noopener noreferrer">
-                            Apri prenotazione
-                          </a>
-                        ) : null}
-
-                        {mapsLink(item.address) ? (
-                          <a className="btn btn-s" href={mapsLink(item.address)} target="_blank" rel="noopener noreferrer">
-                            Mappa
-                          </a>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
-              )}
+              ) : <EmptyState text="Nessun volo inserito." />}
             </article>
 
             <article className="card stack-card">
-              <div className="card-title">Auto a noleggio</div>
-
-              <form className="form-shell form-grid" onSubmit={handleAddCar}>
-                <label>
-                  <Label required>Compagnia</Label>
-                  <input
-                    className={fieldClass(carForm.company)}
-                    value={carForm.company}
-                    onChange={(e) => setCarForm((prev) => ({ ...prev, company: e.target.value }))}
-                  />
-                </label>
-
-                <div className="grid-cards responsive-2">
-                  <label>
-                    <Label>Ritiro</Label>
-                    <input
-                      className={fieldClass(carForm.pickupPlace)}
-                      value={carForm.pickupPlace}
-                      onChange={(e) => setCarForm((prev) => ({ ...prev, pickupPlace: e.target.value }))}
-                    />
-                  </label>
-
-                  <label>
-                    <Label>Consegna</Label>
-                    <input
-                      className={fieldClass(carForm.dropoffPlace)}
-                      value={carForm.dropoffPlace}
-                      onChange={(e) => setCarForm((prev) => ({ ...prev, dropoffPlace: e.target.value }))}
-                    />
-                  </label>
+              <div className="card-title">4. Hotel</div>
+              <form className="form-shell form-grid" onSubmit={handleAddHotel}>
+                <div className="grid-cards responsive-3">
+                  <label><Label required>Nome hotel</Label><input className={fieldClass(hotelForm.name, Boolean(hotelErrors.name))} value={hotelForm.name} onChange={(e) => setHotelForm((prev) => ({ ...prev, name: e.target.value }))} /><ErrorLine text={hotelErrors.name} /></label>
+                  <label><Label>Telefono</Label><input className={fieldClass(hotelForm.phone)} value={hotelForm.phone} onChange={(e) => setHotelForm((prev) => ({ ...prev, phone: e.target.value }))} /></label>
+                  <label><Label>Metodo pagamento</Label><input className={fieldClass(hotelForm.paymentMethod)} value={hotelForm.paymentMethod} onChange={(e) => setHotelForm((prev) => ({ ...prev, paymentMethod: e.target.value }))} /></label>
+                  <label className="responsive-full"><Label>Indirizzo</Label><input className={fieldClass(hotelForm.address)} value={hotelForm.address} onChange={(e) => setHotelForm((prev) => ({ ...prev, address: e.target.value }))} /></label>
+                  <label><Label>Latitudine</Label><input className={fieldClass(hotelForm.lat)} value={hotelForm.lat} onChange={(e) => setHotelForm((prev) => ({ ...prev, lat: e.target.value }))} /></label>
+                  <label><Label>Longitudine</Label><input className={fieldClass(hotelForm.lng)} value={hotelForm.lng} onChange={(e) => setHotelForm((prev) => ({ ...prev, lng: e.target.value }))} /></label>
+                  <label><Label>Check-in</Label><input type="date" className={fieldClass(hotelForm.checkIn)} value={hotelForm.checkIn} onChange={(e) => setHotelForm((prev) => ({ ...prev, checkIn: e.target.value }))} /></label>
+                  <label><Label>Check-out</Label><input type="date" className={fieldClass(hotelForm.checkOut)} value={hotelForm.checkOut} onChange={(e) => setHotelForm((prev) => ({ ...prev, checkOut: e.target.value }))} /></label>
+                  <label><Label>Pagato</Label><input className={fieldClass(hotelForm.paidAmount)} value={hotelForm.paidAmount} onChange={(e) => setHotelForm((prev) => ({ ...prev, paidAmount: e.target.value }))} /></label>
+                  <label><Label>Da pagare</Label><input className={fieldClass(hotelForm.dueAmount)} value={hotelForm.dueAmount} onChange={(e) => setHotelForm((prev) => ({ ...prev, dueAmount: e.target.value }))} /></label>
+                  <label><Label>Link prenotazione</Label><input className={fieldClass(hotelForm.bookingUrl)} value={hotelForm.bookingUrl} onChange={(e) => setHotelForm((prev) => ({ ...prev, bookingUrl: e.target.value }))} /></label>
+                  <label><Label>Link alternativo</Label><input className={fieldClass(hotelForm.alternateUrl)} value={hotelForm.alternateUrl} onChange={(e) => setHotelForm((prev) => ({ ...prev, alternateUrl: e.target.value }))} /></label>
+                  <label><Label>Data cancellazione gratuita</Label><input type="date" className={fieldClass(hotelForm.cancellationDate)} value={hotelForm.cancellationDate} onChange={(e) => setHotelForm((prev) => ({ ...prev, cancellationDate: e.target.value }))} /></label>
                 </div>
-
-                <div className="grid-cards responsive-2">
-                  <label>
-                    <Label>Data ritiro</Label>
-                    <input
-                      type="date"
-                      className={fieldClass(carForm.pickupDate)}
-                      value={carForm.pickupDate}
-                      onChange={(e) => setCarForm((prev) => ({ ...prev, pickupDate: e.target.value }))}
-                    />
-                  </label>
-
-                  <label>
-                    <Label>Data consegna</Label>
-                    <input
-                      type="date"
-                      className={fieldClass(carForm.dropoffDate)}
-                      value={carForm.dropoffDate}
-                      onChange={(e) => setCarForm((prev) => ({ ...prev, dropoffDate: e.target.value }))}
-                    />
-                  </label>
-                </div>
-
-                <div className="grid-cards responsive-2">
-                  <label>
-                    <Label>Costo</Label>
-                    <input
-                      className={fieldClass(carForm.cost)}
-                      value={carForm.cost}
-                      onChange={(e) => setCarForm((prev) => ({ ...prev, cost: e.target.value }))}
-                    />
-                  </label>
-
-                  <label>
-                    <Label>Deposito</Label>
-                    <input
-                      className={fieldClass(carForm.deposit)}
-                      value={carForm.deposit}
-                      onChange={(e) => setCarForm((prev) => ({ ...prev, deposit: e.target.value }))}
-                    />
-                  </label>
-                </div>
-
-                <label>
-                  <Label>Link prenotazione</Label>
-                  <input
-                    className={fieldClass(carForm.bookingUrl)}
-                    value={carForm.bookingUrl}
-                    onChange={(e) => setCarForm((prev) => ({ ...prev, bookingUrl: e.target.value }))}
-                  />
-                </label>
-
-                <label>
-                  <Label>Note</Label>
-                  <textarea
-                    className={fieldClass(carForm.notes)}
-                    value={carForm.notes}
-                    onChange={(e) => setCarForm((prev) => ({ ...prev, notes: e.target.value }))}
-                  />
-                </label>
-
-                <div>
-                  <button className="btn btn-p" type="submit">Aggiungi auto</button>
-                </div>
+                <div><button type="submit" className="btn btn-p">Aggiungi hotel</button></div>
               </form>
 
-              {selectedTrip.carRentals?.length === 0 ? (
-                <EmptyState text="Nessuna auto a noleggio registrata." />
-              ) : (
-                <div className="list-clean">
-                  {selectedTrip.carRentals.map((item) => (
-                    <div key={item.id} className="list-item">
-                      <div className="between">
-                        <div>
-                          <div className="card-subtitle">{item.company || 'Noleggio auto'}</div>
-                          <div className="muted">
-                            {fmt(item.pickupDate)} {item.pickupPlace} → {fmt(item.dropoffDate)} {item.dropoffPlace}
+              {selectedTrip.hotels?.length ? (
+                <div className="timeline-list">
+                  {selectedTrip.hotels.map((hotel) => {
+                    const deadlineForm = hotelDeadlineForms[hotel.id] || EMPTY_HOTEL_DEADLINE_FORM
+                    const deadlineErrors = hotelDeadlineErrors[hotel.id] || {}
+                    const mapUrl = mapsLink(hotel.address, hotel.lat, hotel.lng)
+                    const dirUrl = directionsLink(hotel.address, hotel.lat, hotel.lng)
+
+                    return (
+                      <div key={hotel.id} className="timeline-item">
+                        <div className="between">
+                          <div>
+                            <div className="card-subtitle">{hotel.name || 'Hotel'}</div>
+                            <div className="muted">{hotel.address || 'Indirizzo non indicato'}</div>
+                          </div>
+                          <div className="actions-row">
+                            {hotel.bookingUrl ? <a className="btn btn-s" href={hotel.bookingUrl} target="_blank" rel="noopener noreferrer">Prenotazione</a> : null}
+                            {mapUrl ? <a className="btn btn-s" href={mapUrl} target="_blank" rel="noopener noreferrer">Maps</a> : null}
+                            {dirUrl ? <a className="btn btn-s" href={dirUrl} target="_blank" rel="noopener noreferrer">Itinerario</a> : null}
+                            <button type="button" className="btn btn-d btn-s" onClick={() => deleteHotel(selectedTrip.id, hotel.id)}>Elimina</button>
                           </div>
                         </div>
 
-                        <button
-                          type="button"
-                          className="btn btn-d btn-s"
-                          onClick={() => deleteCarRental(selectedTrip.id, item.id)}
-                        >
-                          Elimina
-                        </button>
+                        <div className="subsection-box">
+                          <div className="card-subtitle">Scadenze hotel</div>
+                          <div className="inline-form">
+                            <div>
+                              <input className={fieldClass(deadlineForm.title, Boolean(deadlineErrors.title))} value={deadlineForm.title} onChange={(e) => setHotelDeadlineForms((prev) => ({ ...prev, [hotel.id]: { ...deadlineForm, title: e.target.value } }))} placeholder="Titolo scadenza" />
+                              <ErrorLine text={deadlineErrors.title} />
+                            </div>
+                            <div>
+                              <input type="date" className={fieldClass(deadlineForm.date, Boolean(deadlineErrors.date))} value={deadlineForm.date} onChange={(e) => setHotelDeadlineForms((prev) => ({ ...prev, [hotel.id]: { ...deadlineForm, date: e.target.value } }))} />
+                              <ErrorLine text={deadlineErrors.date} />
+                            </div>
+                            <input className={fieldClass(deadlineForm.notes)} value={deadlineForm.notes} onChange={(e) => setHotelDeadlineForms((prev) => ({ ...prev, [hotel.id]: { ...deadlineForm, notes: e.target.value } }))} placeholder="Note" />
+                            <button type="button" className="btn btn-p" onClick={() => handleAddHotelDeadline(hotel.id)}>Aggiungi scadenza</button>
+                          </div>
+
+                          <div className="timeline-list" style={{ marginTop: 10 }}>
+                            {(hotel.deadlines || []).map((item) => (
+                              <div key={item.id} className="timeline-item compact between">
+                                <div>{item.title} · {fmt(item.date)} {item.notes ? `· ${item.notes}` : ''}</div>
+                                <div className="actions-row">
+                                  {item.date ? <a className="btn btn-s" href={googleCalendarLink({ title: item.title, startDate: item.date, details: item.notes, location: hotel.address })} target="_blank" rel="noopener noreferrer">Calendar</a> : null}
+                                  <button type="button" className="btn btn-d btn-s" onClick={() => deleteHotelDeadline(selectedTrip.id, hotel.id, item.id)}>Elimina</button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </div>
+                    )
+                  })}
+                </div>
+              ) : <EmptyState text="Nessun hotel inserito." />}
+            </article>
+          </section>
 
-                      <div className="hero-meta">
-                        <span className="meta-chip">{item.cost || 'Costo n.d.'}</span>
-                        <span className="meta-chip">Deposito {item.deposit || 'n.d.'}</span>
-                      </div>
+          <section className="grid-cards cols-2">
+            <article className="card stack-card">
+              <div className="card-title">5. Parcheggi e auto</div>
 
-                      {item.notes ? <div>{item.notes}</div> : null}
+              <div className="form-shell">
+                <form className="form-grid" onSubmit={handleAddParking}>
+                  <div className="form-section-title">Parcheggio</div>
+                  <div className="grid-cards responsive-2">
+                    <label><Label required>Nome parcheggio</Label><input className={fieldClass(parkingForm.name)} value={parkingForm.name} onChange={(e) => setParkingForm((prev) => ({ ...prev, name: e.target.value }))} /></label>
+                    <label><Label>Indirizzo</Label><input className={fieldClass(parkingForm.address)} value={parkingForm.address} onChange={(e) => setParkingForm((prev) => ({ ...prev, address: e.target.value }))} /></label>
+                    <label><Label>Dal</Label><input type="date" className={fieldClass(parkingForm.dateFrom)} value={parkingForm.dateFrom} onChange={(e) => setParkingForm((prev) => ({ ...prev, dateFrom: e.target.value }))} /></label>
+                    <label><Label>Al</Label><input type="date" className={fieldClass(parkingForm.dateTo)} value={parkingForm.dateTo} onChange={(e) => setParkingForm((prev) => ({ ...prev, dateTo: e.target.value }))} /></label>
+                    <label><Label>Costo</Label><input className={fieldClass(parkingForm.cost)} value={parkingForm.cost} onChange={(e) => setParkingForm((prev) => ({ ...prev, cost: e.target.value }))} /></label>
+                    <label><Label>Link prenotazione</Label><input className={fieldClass(parkingForm.bookingUrl)} value={parkingForm.bookingUrl} onChange={(e) => setParkingForm((prev) => ({ ...prev, bookingUrl: e.target.value }))} /></label>
+                    <label className="responsive-full"><Label>Note</Label><textarea className={fieldClass(parkingForm.notes)} value={parkingForm.notes} onChange={(e) => setParkingForm((prev) => ({ ...prev, notes: e.target.value }))} /></label>
+                  </div>
+                  <div><button type="submit" className="btn btn-p">Aggiungi parcheggio</button></div>
+                </form>
 
+                <div className="timeline-list">
+                  {(selectedTrip.parkingReservations || []).map((item) => (
+                    <div key={item.id} className="timeline-item compact between">
+                      <div>{item.name} · {fmt(item.dateFrom)} → {fmt(item.dateTo)} {item.cost ? `· ${item.cost}` : ''}</div>
                       <div className="actions-row">
-                        {item.bookingUrl ? (
-                          <a className="btn btn-s" href={item.bookingUrl} target="_blank" rel="noopener noreferrer">
-                            Apri prenotazione
-                          </a>
-                        ) : null}
+                        {item.bookingUrl ? <a className="btn btn-s" href={item.bookingUrl} target="_blank" rel="noopener noreferrer">Apri</a> : null}
+                        <button type="button" className="btn btn-d btn-s" onClick={() => deleteParkingReservation(selectedTrip.id, item.id)}>Elimina</button>
                       </div>
                     </div>
                   ))}
                 </div>
-              )}
-            </article>
-          </section>
+              </div>
 
-          <section className="card stack-card">
-            <div className="card-title">6. Diario, luoghi e media</div>
-
-            <div className="grid-cards cols-2">
               <div className="form-shell">
-                <form className="form-grid" onSubmit={handleAddDay}>
-                  <div className="form-section-title">Giorni del diario</div>
-
-                  <label>
-                    <Label>Data</Label>
-                    <input
-                      type="date"
-                      className={fieldClass(dayForm.date)}
-                      value={dayForm.date}
-                      onChange={(e) => setDayForm((prev) => ({ ...prev, date: e.target.value }))}
-                    />
-                  </label>
-
-                  <label>
-                    <Label required>Titolo</Label>
-                    <input
-                      className={fieldClass(dayForm.title)}
-                      value={dayForm.title}
-                      onChange={(e) => setDayForm((prev) => ({ ...prev, title: e.target.value }))}
-                      placeholder="Es. Giorno 1, arrivo, centro storico"
-                    />
-                  </label>
-
-                  <label>
-                    <Label>Note</Label>
-                    <textarea
-                      className={fieldClass(dayForm.notes)}
-                      value={dayForm.notes}
-                      onChange={(e) => setDayForm((prev) => ({ ...prev, notes: e.target.value }))}
-                    />
-                  </label>
-
-                  <div>
-                    <button type="submit" className="btn btn-p">Aggiungi giorno</button>
+                <form className="form-grid" onSubmit={handleAddCar}>
+                  <div className="form-section-title">Auto a noleggio</div>
+                  <div className="grid-cards responsive-2">
+                    <label><Label required>Compagnia</Label><input className={fieldClass(carForm.company)} value={carForm.company} onChange={(e) => setCarForm((prev) => ({ ...prev, company: e.target.value }))} /></label>
+                    <label><Label>Costo</Label><input className={fieldClass(carForm.cost)} value={carForm.cost} onChange={(e) => setCarForm((prev) => ({ ...prev, cost: e.target.value }))} /></label>
+                    <label><Label>Ritiro</Label><input className={fieldClass(carForm.pickupPlace)} value={carForm.pickupPlace} onChange={(e) => setCarForm((prev) => ({ ...prev, pickupPlace: e.target.value }))} /></label>
+                    <label><Label>Riconsegna</Label><input className={fieldClass(carForm.dropoffPlace)} value={carForm.dropoffPlace} onChange={(e) => setCarForm((prev) => ({ ...prev, dropoffPlace: e.target.value }))} /></label>
+                    <label><Label>Data ritiro</Label><input type="date" className={fieldClass(carForm.pickupDate)} value={carForm.pickupDate} onChange={(e) => setCarForm((prev) => ({ ...prev, pickupDate: e.target.value }))} /></label>
+                    <label><Label>Data riconsegna</Label><input type="date" className={fieldClass(carForm.dropoffDate)} value={carForm.dropoffDate} onChange={(e) => setCarForm((prev) => ({ ...prev, dropoffDate: e.target.value }))} /></label>
+                    <label><Label>Deposito</Label><input className={fieldClass(carForm.deposit)} value={carForm.deposit} onChange={(e) => setCarForm((prev) => ({ ...prev, deposit: e.target.value }))} /></label>
+                    <label><Label>Link prenotazione</Label><input className={fieldClass(carForm.bookingUrl)} value={carForm.bookingUrl} onChange={(e) => setCarForm((prev) => ({ ...prev, bookingUrl: e.target.value }))} /></label>
+                    <label className="responsive-full"><Label>Note</Label><textarea className={fieldClass(carForm.notes)} value={carForm.notes} onChange={(e) => setCarForm((prev) => ({ ...prev, notes: e.target.value }))} /></label>
                   </div>
+                  <div><button type="submit" className="btn btn-p">Aggiungi auto</button></div>
                 </form>
 
-                {(selectedTrip.travelDiary?.days || []).length ? (
-                  <div className="timeline-list">
-                    {selectedTrip.travelDiary.days.map((day) => (
-                      <div key={day.id} className="timeline-item compact">
-                        <div className="between">
-                          <div>
-                            <div className="card-subtitle">{day.title}</div>
-                            <div className="muted">{fmt(day.date)}</div>
-                          </div>
-                          <button
-                            type="button"
-                            className="btn btn-d btn-s"
-                            onClick={() => deleteDiaryDay(selectedTrip.id, day.id)}
-                          >
-                            Elimina
-                          </button>
-                        </div>
-                        {day.notes ? <div>{day.notes}</div> : null}
+                <div className="timeline-list">
+                  {(selectedTrip.carRentals || []).map((item) => (
+                    <div key={item.id} className="timeline-item compact between">
+                      <div>{item.company} · {fmt(item.pickupDate)} → {fmt(item.dropoffDate)} {item.cost ? `· ${item.cost}` : ''}</div>
+                      <div className="actions-row">
+                        {item.bookingUrl ? <a className="btn btn-s" href={item.bookingUrl} target="_blank" rel="noopener noreferrer">Apri</a> : null}
+                        <button type="button" className="btn btn-d btn-s" onClick={() => deleteCarRental(selectedTrip.id, item.id)}>Elimina</button>
                       </div>
-                    ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </article>
+
+            <article className="card stack-card">
+              <div className="card-title">6. Diario, luoghi e media</div>
+
+              <div className="form-shell">
+                <form className="form-grid" onSubmit={handleAddDay}>
+                  <div className="form-section-title">Giorno di viaggio</div>
+                  <div className="grid-cards responsive-2">
+                    <label><Label>Data</Label><input type="date" className={fieldClass(dayForm.date)} value={dayForm.date} onChange={(e) => setDayForm((prev) => ({ ...prev, date: e.target.value }))} /></label>
+                    <label><Label required>Titolo</Label><input className={fieldClass(dayForm.title)} value={dayForm.title} onChange={(e) => setDayForm((prev) => ({ ...prev, title: e.target.value }))} /></label>
+                    <label className="responsive-full"><Label>Note</Label><textarea className={fieldClass(dayForm.notes)} value={dayForm.notes} onChange={(e) => setDayForm((prev) => ({ ...prev, notes: e.target.value }))} /></label>
                   </div>
-                ) : (
-                  <EmptyState text="Nessun giorno diario inserito." />
-                )}
+                  <div><button type="submit" className="btn btn-p">Aggiungi giorno</button></div>
+                </form>
+
+                <div className="timeline-list">
+                  {(selectedTrip.travelDiary?.days || []).map((day) => (
+                    <div key={day.id} className="timeline-item compact between">
+                      <div>{fmt(day.date)} · {day.title} {day.notes ? `· ${day.notes}` : ''}</div>
+                      <button type="button" className="btn btn-d btn-s" onClick={() => deleteDiaryDay(selectedTrip.id, day.id)}>Elimina</button>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div className="form-shell">
                 <form className="form-grid" onSubmit={handleAddPlace}>
-                  <div className="form-section-title">Luoghi salvati</div>
-
+                  <div className="form-section-title">Luogo / ristorante / punto utile</div>
                   <div className="grid-cards responsive-2">
-                    <label>
-                      <Label>Tipo</Label>
-                      <input
-                        className={fieldClass(placeForm.type)}
-                        value={placeForm.type}
-                        onChange={(e) => setPlaceForm((prev) => ({ ...prev, type: e.target.value }))}
-                        placeholder="hotel, museo, ristorante..."
-                      />
-                    </label>
-
-                    <label>
-                      <Label required>Nome</Label>
-                      <input
-                        className={fieldClass(placeForm.name)}
-                        value={placeForm.name}
-                        onChange={(e) => setPlaceForm((prev) => ({ ...prev, name: e.target.value }))}
-                      />
-                    </label>
-
-                    <label className="responsive-full">
-                      <Label>Indirizzo</Label>
-                      <input
-                        className={fieldClass(placeForm.address)}
-                        value={placeForm.address}
-                        onChange={(e) => setPlaceForm((prev) => ({ ...prev, address: e.target.value }))}
-                      />
-                    </label>
-
-                    <label>
-                      <Label>Lat</Label>
-                      <input
-                        className={fieldClass(placeForm.lat)}
-                        value={placeForm.lat}
-                        onChange={(e) => setPlaceForm((prev) => ({ ...prev, lat: e.target.value }))}
-                      />
-                    </label>
-
-                    <label>
-                      <Label>Lng</Label>
-                      <input
-                        className={fieldClass(placeForm.lng)}
-                        value={placeForm.lng}
-                        onChange={(e) => setPlaceForm((prev) => ({ ...prev, lng: e.target.value }))}
-                      />
-                    </label>
-
-                    <label>
-                      <Label>Rating</Label>
-                      <input
-                        className={fieldClass(placeForm.rating)}
-                        value={placeForm.rating}
-                        onChange={(e) => setPlaceForm((prev) => ({ ...prev, rating: e.target.value }))}
-                      />
-                    </label>
-
-                    <label>
-                      <Label>URL</Label>
-                      <input
-                        className={fieldClass(placeForm.url)}
-                        value={placeForm.url}
-                        onChange={(e) => setPlaceForm((prev) => ({ ...prev, url: e.target.value }))}
-                      />
-                    </label>
-
-                    <label>
-                      <Label>Immagine</Label>
-                      <input
-                        className={fieldClass(placeForm.imageUrl)}
-                        value={placeForm.imageUrl}
-                        onChange={(e) => setPlaceForm((prev) => ({ ...prev, imageUrl: e.target.value }))}
-                      />
-                    </label>
-
-                    <label className="responsive-full">
-                      <Label>Recensione memo</Label>
-                      <textarea
-                        className={fieldClass(placeForm.reviewNote)}
-                        value={placeForm.reviewNote}
-                        onChange={(e) => setPlaceForm((prev) => ({ ...prev, reviewNote: e.target.value }))}
-                      />
-                    </label>
-
-                    <label className="responsive-full">
-                      <Label>Note</Label>
-                      <textarea
-                        className={fieldClass(placeForm.notes)}
-                        value={placeForm.notes}
-                        onChange={(e) => setPlaceForm((prev) => ({ ...prev, notes: e.target.value }))}
-                      />
-                    </label>
+                    <label><Label>Tipo</Label><input className={fieldClass(placeForm.type)} value={placeForm.type} onChange={(e) => setPlaceForm((prev) => ({ ...prev, type: e.target.value }))} /></label>
+                    <label><Label required>Nome</Label><input className={fieldClass(placeForm.name)} value={placeForm.name} onChange={(e) => setPlaceForm((prev) => ({ ...prev, name: e.target.value }))} /></label>
+                    <label className="responsive-full"><Label>Indirizzo</Label><input className={fieldClass(placeForm.address)} value={placeForm.address} onChange={(e) => setPlaceForm((prev) => ({ ...prev, address: e.target.value }))} /></label>
+                    <label><Label>Link</Label><input className={fieldClass(placeForm.url)} value={placeForm.url} onChange={(e) => setPlaceForm((prev) => ({ ...prev, url: e.target.value }))} /></label>
+                    <label><Label>Voto</Label><input className={fieldClass(placeForm.rating)} value={placeForm.rating} onChange={(e) => setPlaceForm((prev) => ({ ...prev, rating: e.target.value }))} /></label>
+                    <label className="responsive-full"><Label>Nota recensione</Label><textarea className={fieldClass(placeForm.reviewNote)} value={placeForm.reviewNote} onChange={(e) => setPlaceForm((prev) => ({ ...prev, reviewNote: e.target.value }))} /></label>
+                    <label><Label>Immagine URL</Label><input className={fieldClass(placeForm.imageUrl)} value={placeForm.imageUrl} onChange={(e) => setPlaceForm((prev) => ({ ...prev, imageUrl: e.target.value }))} /></label>
+                    <label className="responsive-full"><Label>Note</Label><textarea className={fieldClass(placeForm.notes)} value={placeForm.notes} onChange={(e) => setPlaceForm((prev) => ({ ...prev, notes: e.target.value }))} /></label>
                   </div>
-
-                  <div>
-                    <button type="submit" className="btn btn-p">Aggiungi luogo</button>
-                  </div>
+                  <div><button type="submit" className="btn btn-p">Aggiungi luogo</button></div>
                 </form>
 
-                {(selectedTrip.travelDiary?.places || []).length ? (
-                  <div className="timeline-list">
-                    {selectedTrip.travelDiary.places.map((place) => (
-                      <div key={place.id} className="timeline-item">
-                        <div className="between">
-                          <div>
-                            <div className="card-subtitle">{place.name}</div>
-                            <div className="muted">
-                              {place.type || 'Luogo'} {place.rating ? `• ${place.rating}` : ''}
-                            </div>
-                          </div>
-                          <div className="actions-row">
-                            {place.url ? (
-                              <a className="btn btn-s" href={place.url} target="_blank" rel="noopener noreferrer">
-                                Apri
-                              </a>
-                            ) : null}
-                            {mapsLink(place.address, place.lat, place.lng) ? (
-                              <a
-                                className="btn btn-s"
-                                href={mapsLink(place.address, place.lat, place.lng)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                              >
-                                Maps
-                              </a>
-                            ) : null}
-                            <button
-                              type="button"
-                              className="btn btn-d btn-s"
-                              onClick={() => deleteDiaryPlace(selectedTrip.id, place.id)}
-                            >
-                              Elimina
-                            </button>
-                          </div>
+                <div className="timeline-list">
+                  {(selectedTrip.travelDiary?.places || []).map((place) => (
+                    <div key={place.id} className="timeline-item">
+                      <div className="between">
+                        <div>
+                          <div className="card-subtitle">{place.name}</div>
+                          <div className="muted">{place.type || 'Luogo'} {place.rating ? `· ${place.rating}` : ''}</div>
                         </div>
-                        {place.reviewNote ? <div className="muted" style={{ marginTop: 8 }}>{place.reviewNote}</div> : null}
-                        {place.notes ? <div className="muted" style={{ marginTop: 8 }}>{place.notes}</div> : null}
+                        <div className="actions-row">
+                          {place.url ? <a className="btn btn-s" href={place.url} target="_blank" rel="noopener noreferrer">Apri</a> : null}
+                          {mapsLink(place.address, place.lat, place.lng) ? <a className="btn btn-s" href={mapsLink(place.address, place.lat, place.lng)} target="_blank" rel="noopener noreferrer">Maps</a> : null}
+                          <button type="button" className="btn btn-d btn-s" onClick={() => deleteDiaryPlace(selectedTrip.id, place.id)}>Elimina</button>
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <EmptyState text="Nessun luogo salvato." />
-                )}
+                      {place.reviewNote ? <div className="muted" style={{ marginTop: 8 }}>{place.reviewNote}</div> : null}
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              <div className="form-shell responsive-full">
+              <div className="form-shell">
                 <form className="form-grid" onSubmit={handleAddMedia}>
                   <div className="form-section-title">Media e link utili</div>
-
                   <div className="grid-cards responsive-2">
                     <label>
                       <Label>Tipo contenuto</Label>
-                      <select
-                        className={fieldClass(mediaForm.type)}
-                        value={mediaForm.type}
-                        onChange={(e) => setMediaForm((prev) => ({ ...prev, type: e.target.value }))}
-                      >
-                        {MEDIA_TYPE_OPTIONS.map((item) => (
-                          <option key={item.value} value={item.value}>
-                            {item.label}
-                          </option>
-                        ))}
+                      <select className={fieldClass(mediaForm.type)} value={mediaForm.type} onChange={(e) => setMediaForm((prev) => ({ ...prev, type: e.target.value }))}>
+                        {MEDIA_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                       </select>
                     </label>
-
-                    <label>
-                      <Label required>Titolo</Label>
-                      <input
-                        className={fieldClass(mediaForm.title)}
-                        value={mediaForm.title}
-                        onChange={(e) => setMediaForm((prev) => ({ ...prev, title: e.target.value }))}
-                        placeholder="Titolo riferimento"
-                      />
-                    </label>
-
-                    <label className="responsive-full">
-                      <Label required>URL</Label>
-                      <input
-                        className={fieldClass(mediaForm.url)}
-                        value={mediaForm.url}
-                        onChange={(e) =>
-                          setMediaForm((prev) => ({
-                            ...prev,
-                            url: e.target.value,
-                            thumbnail: prev.type === 'youtube' ? youtubeThumb(e.target.value) : prev.thumbnail,
-                          }))
-                        }
-                        placeholder="https://..."
-                      />
-                    </label>
-
-                    <label>
-                      <Label>Fonte</Label>
-                      <input
-                        className={fieldClass(mediaForm.source)}
-                        value={mediaForm.source}
-                        onChange={(e) => setMediaForm((prev) => ({ ...prev, source: e.target.value }))}
-                        placeholder="Es. blog, creator, sito ufficiale"
-                      />
-                    </label>
-
-                    <label>
-                      <Label>Thumbnail</Label>
-                      <input
-                        className={fieldClass(mediaForm.thumbnail)}
-                        value={mediaForm.thumbnail}
-                        onChange={(e) => setMediaForm((prev) => ({ ...prev, thumbnail: e.target.value }))}
-                        placeholder="URL immagine opzionale"
-                      />
-                    </label>
-
-                    <label className="responsive-full">
-                      <Label>Note</Label>
-                      <textarea
-                        className={fieldClass(mediaForm.notes)}
-                        value={mediaForm.notes}
-                        onChange={(e) => setMediaForm((prev) => ({ ...prev, notes: e.target.value }))}
-                      />
-                    </label>
+                    <label><Label required>Titolo</Label><input className={fieldClass(mediaForm.title)} value={mediaForm.title} onChange={(e) => setMediaForm((prev) => ({ ...prev, title: e.target.value }))} /></label>
+                    <label className="responsive-full"><Label required>URL</Label><input className={fieldClass(mediaForm.url)} value={mediaForm.url} onChange={(e) => setMediaForm((prev) => ({ ...prev, url: e.target.value, thumbnail: mediaForm.type === 'youtube' ? youtubeThumb(e.target.value) : prev.thumbnail }))} /></label>
+                    <label><Label>Fonte</Label><input className={fieldClass(mediaForm.source)} value={mediaForm.source} onChange={(e) => setMediaForm((prev) => ({ ...prev, source: e.target.value }))} /></label>
+                    <label><Label>Thumbnail</Label><input className={fieldClass(mediaForm.thumbnail)} value={mediaForm.thumbnail} onChange={(e) => setMediaForm((prev) => ({ ...prev, thumbnail: e.target.value }))} /></label>
+                    <label className="responsive-full"><Label>Note</Label><textarea className={fieldClass(mediaForm.notes)} value={mediaForm.notes} onChange={(e) => setMediaForm((prev) => ({ ...prev, notes: e.target.value }))} /></label>
                   </div>
-
-                  <div>
-                    <button type="submit" className="btn btn-p">Aggiungi media</button>
-                  </div>
+                  <div><button type="submit" className="btn btn-p">Aggiungi media</button></div>
                 </form>
 
                 {(selectedTrip.travelDiary?.mediaLinks || []).length ? (
@@ -1996,49 +773,37 @@ export default function ViaggiPage() {
                       const thumb = guessMediaThumb(item.type, item.url, item.thumbnail)
                       return (
                         <div key={item.id} className="media-card">
-                          {thumb ? (
-                            <img src={thumb} alt={item.title} className="media-thumb" loading="lazy" />
-                          ) : (
-                            <div className="media-thumb" />
-                          )}
+                          {thumb ? <img src={thumb} alt={item.title} className="media-thumb" loading="lazy" /> : <div className="media-thumb" />}
                           <div className="media-body">
                             <div className="card-subtitle">{item.title}</div>
                             <div className="muted">{item.source || item.type}</div>
                             {item.notes ? <div className="muted">{item.notes}</div> : null}
                             <div className="actions-row">
-                              <a className="btn btn-s" href={item.url} target="_blank" rel="noopener noreferrer">
-                                Apri
-                              </a>
-                              <button
-                                type="button"
-                                className="btn btn-d btn-s"
-                                onClick={() => deleteDiaryMedia(selectedTrip.id, item.id)}
-                              >
-                                Elimina
-                              </button>
+                              <a className="btn btn-s" href={item.url} target="_blank" rel="noopener noreferrer">Apri</a>
+                              <button type="button" className="btn btn-d btn-s" onClick={() => deleteDiaryMedia(selectedTrip.id, item.id)}>Elimina</button>
                             </div>
                           </div>
                         </div>
                       )
                     })}
                   </div>
-                ) : (
-                  <EmptyState text="Nessun media o link utile inserito." />
-                )}
+                ) : <EmptyState text="Nessun media o link utile inserito." />}
               </div>
-            </div>
+            </article>
           </section>
 
           <section className="card stack-card">
             <div className="card-title">7. Checklist</div>
 
-            {selectedTrip.packingChecklist?.length ? (
-              <div className="checklist-groups">
+            {!selectedTrip.packingChecklist?.length ? (
+              <EmptyState text="Nessuna checklist disponibile per questo viaggio." />
+            ) : (
+              <div className="grid-cards cols-2">
                 {selectedTrip.packingChecklist.map((group) => (
                   <div key={group.id} className="subsection-box">
                     <div className="between">
                       <div>
-                        <div className="card-subtitle">{group.category || 'Checklist'}</div>
+                        <div className="card-subtitle">{group.category}</div>
                         <div className="muted">Spunte rapide e nuove voci aggiungibili.</div>
                       </div>
                     </div>
@@ -2046,43 +811,20 @@ export default function ViaggiPage() {
                     <div className="checklist-list" style={{ marginTop: 12 }}>
                       {(group.items || []).map((item) => (
                         <div key={item.id} className={`check-item ${item.done ? 'done' : ''}`}>
-                          <input
-                            type="checkbox"
-                            checked={Boolean(item.done)}
-                            onChange={() => toggleChecklistItem(selectedTrip.id, group.id, item.id)}
-                          />
+                          <input type="checkbox" checked={Boolean(item.done)} onChange={() => toggleChecklistItem(selectedTrip.id, group.id, item.id)} />
                           <span>{item.label}</span>
-                          <button
-                            type="button"
-                            className="btn btn-d btn-s"
-                            onClick={() => removeChecklistItem(selectedTrip.id, group.id, item.id)}
-                          >
-                            Elimina
-                          </button>
+                          <button type="button" className="btn btn-d btn-s" onClick={() => removeChecklistItem(selectedTrip.id, group.id, item.id)}>Elimina</button>
                         </div>
                       ))}
                     </div>
 
                     <div className="inline-form" style={{ marginTop: 12 }}>
-                      <input
-                        className={fieldClass(newChecklistLabels[group.id] || '')}
-                        value={newChecklistLabels[group.id] || ''}
-                        onChange={(e) => setNewChecklistLabels((prev) => ({ ...prev, [group.id]: e.target.value }))}
-                        placeholder={`Nuova voce per ${group.category || 'checklist'}`}
-                      />
-                      <button
-                        type="button"
-                        className="btn btn-p"
-                        onClick={() => handleAddChecklistItem(group.id)}
-                      >
-                        Aggiungi voce
-                      </button>
+                      <input className={fieldClass(newChecklistLabels[group.id] || '')} value={newChecklistLabels[group.id] || ''} onChange={(e) => setNewChecklistLabels((prev) => ({ ...prev, [group.id]: e.target.value }))} placeholder={`Nuova voce per ${group.category}`} />
+                      <button type="button" className="btn btn-p" onClick={() => handleAddChecklistItem(group.id)}>Aggiungi voce</button>
                     </div>
                   </div>
                 ))}
               </div>
-            ) : (
-              <EmptyState text="Nessuna checklist disponibile per questo viaggio." />
             )}
           </section>
         </>

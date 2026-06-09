@@ -49,44 +49,42 @@ function LoginScreen() {
 
   return (
     <div className="login-wrap">
-      <div className="login-card">
+      <form className="login-card" onSubmit={submit}>
         <div className="login-logo">🏡</div>
         <h1 className="login-title">Family Hub</h1>
-        <p className="muted" style={{ textAlign: 'center', marginBottom: 20 }}>
-          Accedi per usare l’app collegata a Supabase
+        <p className="muted" style={{ textAlign: 'center' }}>
+          Accedi per usare l’app collegata a Supabase.
         </p>
 
-        <form onSubmit={submit} className="form-grid">
-          <label>
-            <span className="fl">Email</span>
-            <input
-              className={`fi ${email ? 'field-active' : ''}`}
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-              required
-            />
-          </label>
+        {message ? <div className="app-status">{message}</div> : null}
 
-          <label>
-            <span className="fl">Password</span>
-            <input
-              className={`fi ${password ? 'field-active' : ''}`}
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-              required
-            />
-          </label>
+        <div className="fg">
+          <label className="fl">Email</label>
+          <input
+            className="fi"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="nome@email.it"
+            required
+          />
+        </div>
 
-          {message ? <div className="error-msg">{message}</div> : null}
+        <div className="fg">
+          <label className="fl">Password</label>
+          <input
+            className="fi"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+            required
+          />
+        </div>
 
-          <button className="btn btn-p" type="submit" disabled={loading} style={{ width: '100%' }}>
-            {loading ? 'Attendere...' : mode === 'login' ? 'Accedi' : 'Registrati'}
-          </button>
-        </form>
+        <button className="btn btn-p" type="submit" disabled={loading}>
+          {loading ? 'Attendere...' : mode === 'register' ? 'Registrati' : 'Accedi'}
+        </button>
 
         <div className="login-switch">
           <button
@@ -97,53 +95,23 @@ function LoginScreen() {
             {mode === 'login' ? 'Non hai un account? Registrati' : 'Hai già un account? Accedi'}
           </button>
         </div>
-      </div>
+      </form>
     </div>
   )
 }
 
-function AppShell({ session }) {
+function Shell({ session }) {
   const [activePage, setActivePage] = useState('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const userEmail = session?.user?.email || ''
+  const userInitials = useMemo(() => getInitials(userEmail), [userEmail])
 
-  const activeItem = useMemo(
-    () => NAV_ITEMS.find((item) => item.key === activePage) || NAV_ITEMS[0],
-    [activePage]
-  )
-
-  useEffect(() => {
-    const onResize = () => {
-      if (window.innerWidth > 768) setSidebarOpen(false)
-    }
-
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
+  const closeSidebar = () => setSidebarOpen(false)
+  const toggleSidebar = () => setSidebarOpen((prev) => !prev)
 
   useEffect(() => {
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') setSidebarOpen(false)
-    }
-
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [])
-
-  useEffect(() => {
-    if (window.innerWidth <= 768) {
-      document.body.style.overflow = sidebarOpen ? 'hidden' : 'auto'
-    }
-
-    return () => {
-      document.body.style.overflow = ''
-      document.documentElement.style.overflow = ''
-    }
-  }, [sidebarOpen])
-
-  const handleNavigate = (key) => {
-    setActivePage(key)
-    if (window.innerWidth <= 768) setSidebarOpen(false)
-  }
+    closeSidebar()
+  }, [activePage])
 
   const renderPage = () => {
     switch (activePage) {
@@ -159,120 +127,121 @@ function AppShell({ session }) {
     }
   }
 
-  const logout = async () => {
-    await supabase.auth.signOut()
-    setSidebarOpen(false)
-  }
-
   return (
     <div className="app-layout">
-      {sidebarOpen ? (
-        <button
-          type="button"
-          className="sidebar-overlay"
-          onClick={() => setSidebarOpen(false)}
-          aria-label="Chiudi sidebar"
-        />
-      ) : null}
+      <div
+        className={`sidebar-overlay ${sidebarOpen ? 'visible' : ''}`}
+        onClick={closeSidebar}
+        aria-hidden={!sidebarOpen}
+      />
 
-      <aside
-        className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}
-        aria-hidden={typeof window !== 'undefined' && window.innerWidth <= 768 ? !sidebarOpen : false}
-      >
-        <div className="sidebar-logo" style={{ justifyContent: 'space-between', width: '100%' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span>🏡</span>
-            <span>Family Hub</span>
+      <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : 'sidebar-collapsed'}`}>
+        <div className="sidebar-logo">
+          <div className="sidebar-logo-main">
+            <div className="sidebar-logo-badge">FH</div>
+            <div>
+              <div>Family Hub</div>
+              <div className="muted small-text">Casa, salute, archivio, viaggi</div>
+            </div>
           </div>
+
           <button
             type="button"
-            className="icon-btn"
-            onClick={() => setSidebarOpen(false)}
-            aria-label="Chiudi sidebar"
-            title="Chiudi sidebar"
+            className="sidebar-close icon-btn"
+            onClick={closeSidebar}
+            aria-label="Nascondi sidebar"
+            title="Nascondi sidebar"
           >
             ✕
           </button>
         </div>
 
-        <ul className="sidebar-nav">
-          {NAV_ITEMS.map((item) => (
-            <li key={item.key}>
-              <button
-                type="button"
-                className={`nav-item ${activePage === item.key ? 'active' : ''}`}
-                onClick={() => handleNavigate(item.key)}
-                aria-current={activePage === item.key ? 'page' : undefined}
-              >
-                <span>{item.icon}</span>
-                <span>{item.label}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <nav className="sidebar-nav-wrap">
+          <ul className="sidebar-nav">
+            {NAV_ITEMS.map((item) => (
+              <li key={item.key}>
+                <button
+                  type="button"
+                  className={`nav-item ${activePage === item.key ? 'active' : ''}`}
+                  onClick={() => setActivePage(item.key)}
+                >
+                  <span className="nav-icon">{item.icon}</span>
+                  <span>{item.label}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </nav>
 
         <div className="sidebar-footer">
           <div className="user-info">
-            <div className="meta-chip">{getInitials(session?.user?.email)}</div>
-            <div className="user-email">{session?.user?.email || 'Utente'}</div>
+            <div className="user-avatar">{userInitials}</div>
+            <div className="user-meta">
+              <div className="small-text">Account attivo</div>
+              <div className="user-email">{userEmail || 'utente@familyhub.local'}</div>
+            </div>
           </div>
 
-          <button type="button" className="btn-logout" onClick={logout}>
+          <button
+            type="button"
+            className="btn-logout"
+            onClick={() => supabase.auth.signOut()}
+          >
             Esci
           </button>
         </div>
       </aside>
 
-      <div className="app-main">
-        <div className="mobile-topbar">
-          <div className="topbar-actions">
+      <main className="app-main">
+        <header className="mobile-topbar">
+          <div className="topbar-left">
             <button
               type="button"
               className="icon-btn hamburger"
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Apri sidebar"
-              title="Apri sidebar"
+              onClick={toggleSidebar}
+              aria-label={sidebarOpen ? 'Nascondi sidebar' : 'Mostra sidebar'}
+              title={sidebarOpen ? 'Nascondi sidebar' : 'Mostra sidebar'}
             >
-              ☰
+              {sidebarOpen ? '✕' : '☰'}
             </button>
+            <div className="topbar-title">Family Hub</div>
           </div>
-
-          <div className="topbar-title">{activeItem.label}</div>
 
           <div className="topbar-actions">
-            <button type="button" className="icon-btn" onClick={logout} aria-label="Esci" title="Esci">
-              ⎋
-            </button>
+            <span className="member-chip">{activePage}</span>
           </div>
+        </header>
+
+        <div className="desktop-toolbar">
+          <button
+            type="button"
+            className="btn btn-s"
+            onClick={toggleSidebar}
+          >
+            {sidebarOpen ? 'Nascondi sidebar' : 'Mostra sidebar'}
+          </button>
         </div>
 
-        <main className="app-content">{renderPage()}</main>
-      </div>
+        <section className="app-content">{renderPage()}</section>
+      </main>
     </div>
   )
 }
 
 export default function App() {
-  const [session, setSession] = useState(null)
-  const [loadingAuth, setLoadingAuth] = useState(true)
+  const [session, setSession] = useState(undefined)
 
   useEffect(() => {
     let mounted = true
 
-    const load = async () => {
-      const { data } = await supabase.auth.getSession()
-      if (!mounted) return
-      setSession(data.session || null)
-      setLoadingAuth(false)
-    }
-
-    load()
+    supabase.auth.getSession().then(({ data }) => {
+      if (mounted) setSession(data.session ?? null)
+    })
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession || null)
-      setLoadingAuth(false)
+      setSession(nextSession ?? null)
     })
 
     return () => {
@@ -281,20 +250,22 @@ export default function App() {
     }
   }, [])
 
-  if (loadingAuth) {
+  if (session === undefined) {
     return (
       <div className="loading-screen">
-        <div className="login-logo">⏳</div>
-        <div>Controllo accesso in corso…</div>
+        <div className="sidebar-logo-badge">FH</div>
+        <div>Caricamento sessione…</div>
       </div>
     )
   }
 
-  if (!session) return <LoginScreen />
+  if (!session) {
+    return <LoginScreen />
+  }
 
   return (
     <AppProvider>
-      <AppShell session={session} />
+      <Shell session={session} />
     </AppProvider>
   )
 }
