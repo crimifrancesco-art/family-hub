@@ -29,7 +29,9 @@
   --transition-interactive: 180ms ease;
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -44,7 +46,8 @@ body,
 }
 
 body {
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 a {
@@ -78,13 +81,14 @@ table {
 .app-main {
   flex: 1;
   min-width: 0;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
 .app-content {
   flex: 1;
-  overflow-y: auto;
+  overflow: visible;
   padding: 20px 16px 28px;
 }
 
@@ -704,7 +708,8 @@ table {
 
 @media (max-width: 768px) {
   body {
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .desktop-toolbar {
