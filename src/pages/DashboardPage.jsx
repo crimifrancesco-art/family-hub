@@ -8,24 +8,27 @@ function fmtDate(value) {
   return `${parts[2]}/${parts[1]}/${parts[0]}`
 }
 
-function sortByDate(items, selector) {
-  return [...items].sort((a, b) => {
-    const av = selector(a) || '9999-99-99'
-    const bv = selector(b) || '9999-99-99'
-    return av.localeCompare(bv)
-  })
+function startOfToday() {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate())
 }
 
-function daysBetween(from, to = new Date()) {
-  if (!from) return null
-  const start = new Date(from)
-  const end = new Date(to)
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
-  const diff = start.getTime() - end.getTime()
-  return Math.ceil(diff / (1000 * 60 * 60 * 24))
+function addDays(date, days) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
 }
 
-function tripStatusLabel(status) {
+function diffDays(dateValue) {
+  if (!dateValue) return null
+  const today = startOfToday()
+  const target = new Date(dateValue)
+  if (Number.isNaN(target.getTime())) return null
+  const normalized = new Date(target.getFullYear(), target.getMonth(), target.getDate())
+  return Math.ceil((normalized.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+function statusTripLabel(status) {
   const map = {
     planning: 'Pianificato',
     incoming: 'In arrivo',
@@ -36,47 +39,37 @@ function tripStatusLabel(status) {
   return map[status] || status || '—'
 }
 
-function tripStatusClass(status) {
-  if (status === 'incoming' || status === 'ongoing') return 'success'
-  if (status === 'cancelled') return 'danger'
-  if (status === 'planning') return 'warning'
-  return ''
+function statusBadgeClass(days) {
+  if (days === null) return 'badge-muted'
+  if (days < 0) return 'badge-danger'
+  if (days <= 30) return 'badge-warning'
+  return 'badge-success'
 }
 
-function EmptyBox({ text }) {
-  return <div className="empty">{text}</div>
+function deadlineText(days) {
+  if (days === null) return 'Nessuna data'
+  if (days < 0) return `Scaduto da ${Math.abs(days)} gg`
+  if (days === 0) return 'Oggi'
+  if (days === 1) return 'Domani'
+  return `Tra ${days} gg`
 }
 
-function ProgressBar({ value, total }) {
-  const safeTotal = total > 0 ? total : 0
-  const pct = safeTotal > 0 ? Math.min(100, Math.round((value / safeTotal) * 100)) : 0
-
+function Widget({ tone, icon, label, value, sub, onClick }) {
   return (
-    <div style={{ display: 'grid', gap: 8 }}>
-      <div
-        style={{
-          width: '100%',
-          height: 10,
-          borderRadius: 999,
-          background: 'rgba(255,255,255,0.08)',
-          overflow: 'hidden',
-        }}
-      >
-        <div
-          style={{
-            width: `${pct}%`,
-            height: '100%',
-            borderRadius: 999,
-            background: 'linear-gradient(90deg, #22c55e 0%, #16a34a 100%)',
-          }}
-        />
-      </div>
-      <div className="muted">{pct}% completato</div>
-    </div>
+    <button className={`widget-card ${tone}`} onClick={onClick} type="button">
+      <div className="widget-icon">{icon}</div>
+      <div className="widget-label">{label}</div>
+      <div className="widget-value">{value}</div>
+      <div className="widget-sub">{sub}</div>
+    </button>
   )
 }
 
-export default function DashboardPage() {
+function EmptyState({ text }) {
+  return <div className="empty">{text}</div>
+}
+
+export default function DashboardPage({ onNavigate }) {
   const {
     trips,
     familyMembers,
@@ -86,146 +79,151 @@ export default function DashboardPage() {
     syncError,
   } = useAppContext()
 
-  const documents = archiveTables?.documents || []
-  const warranties = archiveTables?.warranties || []
-  const therapies = healthTables?.therapies || []
-  const appointments = healthTables?.appointments || []
+  const summary = useMemo(() => {
+    const today = startOfToday()
+    const weekEnd = addDays(today, 7)
 
-  const stats = useMemo(() => {
-    const activeTrips = trips.filter((trip) => trip.status === 'incoming' || trip.status === 'ongoing')
+    const documents = archiveTables?.documents || []
+    const visits = healthTables?.specialistVisits || []
+    const therapies = healthTables?.visitTherapies || []
+    const therapyMedications = healthTables?.therapyMedications || []
+    const members = familyMembers || []
+    const tripList = trips || []
 
-    const checklistTotal = trips.reduce((acc, trip) => {
-      const groups = trip.packingChecklist || []
-      return (
-        acc +
-        groups.reduce((groupAcc, group) => groupAcc + (group.items?.length || 0), 0)
-      )
-    }, 0)
-
-    const checklistDone = trips.reduce((acc, trip) => {
-      const groups = trip.packingChecklist || []
-      return (
-        acc +
-        groups.reduce(
-          (groupAcc, group) =>
-            groupAcc + (group.items || []).filter((item) => item.done).length,
-          0
-        )
-      )
-    }, 0)
-
-    const docsWithExpiry = documents.filter((doc) => doc.expiryDate)
-    const nextExpiry = sortByDate(docsWithExpiry, (doc) => doc.expiryDate)[0] || null
-
-    const nextAppointment =
-      sortByDate(
-        appointments.filter((row) => row.date),
-        (row) => row.date
-      )[0] || null
-
-    return {
-      familyCount: familyMembers.length,
-      activeTrips: activeTrips.length,
-      totalTrips: trips.length,
-      archiveCount: documents.length + warranties.length,
-      documentsCount: documents.length,
-      warrantiesCount: warranties.length,
-      healthCount: therapies.length + appointments.length,
-      therapiesCount: therapies.length,
-      appointmentsCount: appointments.length,
-      checklistDone,
-      checklistTotal,
-      nextExpiry,
-      nextAppointment,
-    }
-  }, [trips, familyMembers, documents, warranties, therapies, appointments])
-
-  const nextTrips = useMemo(() => {
-    return sortByDate(
-      trips.filter((trip) => trip.dateFrom),
-      (trip) => trip.dateFrom
-    ).slice(0, 4)
-  }, [trips])
-
-  const upcomingAppointments = useMemo(() => {
-    return sortByDate(
-      appointments.filter((row) => row.date),
-      (row) => row.date
-    ).slice(0, 5)
-  }, [appointments])
-
-  const expiringDocuments = useMemo(() => {
-    return sortByDate(
-      documents.filter((row) => row.expiryDate),
-      (row) => row.expiryDate
-    ).slice(0, 5)
-  }, [documents])
-
-  const recentDocuments = useMemo(() => {
-    return [...documents].slice(-5).reverse()
-  }, [documents])
-
-  const familyOverview = useMemo(() => {
-    return familyMembers.map((member) => {
-      const memberAppointments = appointments.filter((row) => row.memberId === member.id)
-      const nextMemberAppointment =
-        sortByDate(
-          memberAppointments.filter((row) => row.date),
-          (row) => row.date
-        )[0] || null
-
-      return {
-        id: member.id,
-        initials: member.initials || '—',
-        name: member.name || 'Senza nome',
-        role: member.role || '—',
-        medications: member.medications?.length || 0,
-        doctor: member.doctor || member.pediatrician || 'Non indicato',
-        bloodGroup: member.bloodGroup || '—',
-        nextAppointment: nextMemberAppointment,
-      }
-    })
-  }, [familyMembers, appointments])
-
-  const urgentItems = useMemo(() => {
-    const expiringDocs = documents
-      .filter((doc) => doc.expiryDate)
-      .map((doc) => ({
-        id: `doc_${doc.id}`,
-        type: 'document',
-        title: doc.title || 'Documento',
-        subtitle: [doc.category, doc.owner].filter(Boolean).join(' · '),
-        date: doc.expiryDate,
-        days: daysBetween(doc.expiryDate),
+    const upcomingTrips = tripList
+      .map((trip) => ({
+        ...trip,
+        daysToStart: diffDays(trip.dateFrom),
       }))
-
-    const visitItems = appointments
-      .filter((item) => item.date)
-      .map((item) => {
-        const member = familyMembers.find((m) => m.id === item.memberId)
-        return {
-          id: `app_${item.id}`,
-          type: 'appointment',
-          title: item.type || 'Appuntamento',
-          subtitle: member?.name || member?.initials || item.memberId || 'Membro',
-          date: item.date,
-          days: daysBetween(item.date),
-        }
+      .filter((trip) => trip.status === 'incoming' || trip.status === 'ongoing' || trip.status === 'planning')
+      .sort((a, b) => {
+        const av = a.daysToStart ?? 9999
+        const bv = b.daysToStart ?? 9999
+        return av - bv
       })
 
-    return [...expiringDocs, ...visitItems]
-      .filter((item) => item.days !== null)
-      .sort((a, b) => a.days - b.days)
-      .slice(0, 6)
-  }, [documents, appointments, familyMembers])
+    const nextTrip = upcomingTrips[0] || null
+
+    const expiringDocuments = documents
+      .map((doc) => ({
+        ...doc,
+        daysToExpiry: diffDays(doc.expiryDate),
+      }))
+      .filter((doc) => doc.expiryDate)
+      .sort((a, b) => {
+        const av = a.daysToExpiry ?? 9999
+        const bv = b.daysToExpiry ?? 9999
+        return av - bv
+      })
+
+    const urgentDocuments = expiringDocuments.filter((doc) => doc.daysToExpiry !== null && doc.daysToExpiry <= 30)
+
+    const upcomingVisits = visits
+      .map((visit) => ({
+        ...visit,
+        daysToVisit: diffDays(visit.date),
+      }))
+      .filter((visit) => visit.date)
+      .sort((a, b) => {
+        const av = a.daysToVisit ?? 9999
+        const bv = b.daysToVisit ?? 9999
+        return av - bv
+      })
+
+    const nextVisit = upcomingVisits.find((visit) => visit.daysToVisit === null || visit.daysToVisit >= 0) || null
+
+    const activeTherapies = therapies.filter((therapy) => {
+      const start = therapy.startDate ? new Date(therapy.startDate) : null
+      const end = therapy.endDate ? new Date(therapy.endDate) : null
+      const validStart = start && !Number.isNaN(start.getTime()) ? start : null
+      const validEnd = end && !Number.isNaN(end.getTime()) ? end : null
+
+      if (!validStart && !validEnd) return true
+      if (validStart && validStart > weekEnd) return false
+      if (validEnd && validEnd < today) return false
+      return true
+    })
+
+    const medicationsToday = members.reduce((count, member) => {
+      const meds = Array.isArray(member.medications) ? member.medications : []
+      return count + meds.filter((med) => med.name || med.schedule || med.dosage).length
+    }, 0)
+
+    const weeklyEvents = [
+      ...upcomingVisits
+        .filter((visit) => {
+          const raw = new Date(visit.date)
+          return !Number.isNaN(raw.getTime()) && raw >= today && raw <= weekEnd
+        })
+        .map((visit) => ({
+          id: `visit_${visit.id}`,
+          date: visit.date,
+          tone: 'tl-health',
+          badge: 'badge-health',
+          type: 'Visita',
+          title: visit.title || 'Visita specialistica',
+          subtitle: `${visit.specialty || 'Specialistica'} · ${visit.doctor || 'Medico non indicato'}`,
+          meta: visit.location || 'Luogo da definire',
+          action: 'salute',
+        })),
+      ...expiringDocuments
+        .filter((doc) => {
+          const raw = new Date(doc.expiryDate)
+          return !Number.isNaN(raw.getTime()) && raw >= today && raw <= weekEnd
+        })
+        .map((doc) => ({
+          id: `doc_${doc.id}`,
+          date: doc.expiryDate,
+          tone: 'tl-arch',
+          badge: 'badge-arch',
+          type: 'Scadenza',
+          title: doc.title || 'Documento',
+          subtitle: `${doc.category || 'Categoria'} · ${doc.owner || 'Intestatario non indicato'}`,
+          meta: 'Documento in scadenza',
+          action: 'archivio',
+        })),
+      ...upcomingTrips
+        .filter((trip) => {
+          const raw = new Date(trip.dateFrom)
+          return !Number.isNaN(raw.getTime()) && raw >= today && raw <= weekEnd
+        })
+        .map((trip) => ({
+          id: `trip_${trip.id}`,
+          date: trip.dateFrom,
+          tone: 'tl-travel',
+          badge: 'badge-travel',
+          type: 'Partenza',
+          title: trip.name || 'Viaggio',
+          subtitle: `${statusTripLabel(trip.status)} · ${fmtDate(trip.dateFrom)}`,
+          meta: `${(trip.persons || []).length} partecipanti`,
+          action: 'viaggi',
+        })),
+    ]
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+      .slice(0, 8)
+
+    return {
+      totalMembers: members.length,
+      medicationsToday,
+      nextTrip,
+      urgentDocuments,
+      nextVisit,
+      activeTherapiesCount: activeTherapies.length,
+      therapyMedicationsCount: therapyMedications.length,
+      weeklyEvents,
+      expiringDocuments: expiringDocuments.slice(0, 5),
+      upcomingVisits: upcomingVisits.slice(0, 5),
+      upcomingTrips: upcomingTrips.slice(0, 5),
+    }
+  }, [archiveTables, familyMembers, healthTables, trips])
 
   if (loadingData) {
     return (
       <div className="page-stack">
         <div className="hero-card">
-          <div className="eyebrow">Dashboard</div>
-          <h1>Caricamento in corso...</h1>
-          <p className="muted">Sto preparando i dati di famiglia, salute, archivio e viaggi.</p>
+          <div className="eyebrow">Dashboard famiglia</div>
+          <h1 className="page-title">Sto caricando i dati</h1>
+          <p className="page-subtitle">Sincronizzo archivio, salute e viaggi.</p>
         </div>
       </div>
     )
@@ -234,329 +232,222 @@ export default function DashboardPage() {
   return (
     <div className="page-stack">
       <section className="hero-card">
-        <div className="eyebrow">Dashboard</div>
-        <h1>Panoramica Family Hub</h1>
-        <p className="muted" style={{ marginTop: 0 }}>
-          Tutto in alto, leggibile e sincronizzato: membri, documenti, salute e viaggi in un solo colpo d’occhio.
-        </p>
-
-        <div className="hero-meta" style={{ marginTop: 12 }}>
-          <span className="meta-chip">👨‍👩‍👧‍👦 {stats.familyCount} membri</span>
-          <span className="meta-chip">✈️ {stats.activeTrips} viaggi attivi</span>
-          <span className="meta-chip">🗂️ {stats.archiveCount} elementi archivio</span>
-          <span className="meta-chip">❤️ {stats.healthCount} elementi salute</span>
+        <div className="eyebrow">Dashboard famiglia</div>
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">Tutto sotto controllo</h1>
+            <p className="page-subtitle">
+              Archivio digitale, terapie, scadenze e viaggi in un solo colpo d’occhio.
+            </p>
+          </div>
+          <div className="row">
+            <span className="badge badge-dash">{summary.totalMembers} membri</span>
+            <span className="badge badge-health">{summary.activeTherapiesCount} terapie attive</span>
+            <span className="badge badge-travel">{summary.upcomingTrips.length} viaggi</span>
+          </div>
         </div>
 
-        {syncError ? (
-          <div className="app-status" style={{ marginTop: 14 }}>
-            {syncError}
-          </div>
-        ) : null}
+        {syncError ? <div className="app-status">{syncError}</div> : null}
       </section>
 
-      <section className="stats-grid">
-        <article className="stat-card">
-          <div className="stat-label">Membri famiglia</div>
-          <div className="stat-value">{stats.familyCount}</div>
-          <div className="stat-note">Anagrafica attualmente caricata</div>
-        </article>
-
-        <article className="stat-card">
-          <div className="stat-label">Viaggi aperti</div>
-          <div className="stat-value">{stats.activeTrips}</div>
-          <div className="stat-note">{stats.totalTrips} viaggi totali registrati</div>
-        </article>
-
-        <article className="stat-card">
-          <div className="stat-label">Archivio totale</div>
-          <div className="stat-value">{stats.archiveCount}</div>
-          <div className="stat-note">
-            {stats.documentsCount} documenti · {stats.warrantiesCount} garanzie
-          </div>
-        </article>
-
-        <article className="stat-card">
-          <div className="stat-label">Salute totale</div>
-          <div className="stat-value">{stats.healthCount}</div>
-          <div className="stat-note">
-            {stats.therapiesCount} terapie · {stats.appointmentsCount} appuntamenti
-          </div>
-        </article>
+      <section>
+        <div className="section-title">Panoramica rapida</div>
+        <div className="grid-2 widget-grid">
+          <Widget
+            tone="wc-dash"
+            icon="👨‍👩‍👧‍👦"
+            label="Famiglia"
+            value={summary.totalMembers}
+            sub={`${summary.medicationsToday} farmaci registrati`}
+            onClick={() => onNavigate?.('salute')}
+          />
+          <Widget
+            tone="wc-health"
+            icon="❤️"
+            label="Salute"
+            value={summary.nextVisit ? fmtDate(summary.nextVisit.date) : '—'}
+            sub={
+              summary.nextVisit
+                ? `${summary.nextVisit.title || 'Prossima visita'}`
+                : 'Nessuna visita programmata'
+            }
+            onClick={() => onNavigate?.('salute')}
+          />
+          <Widget
+            tone="wc-arch"
+            icon="🗂️"
+            label="Archivio"
+            value={summary.urgentDocuments.length}
+            sub="documenti in scadenza entro 30 giorni"
+            onClick={() => onNavigate?.('archivio')}
+          />
+          <Widget
+            tone="wc-travel"
+            icon="✈️"
+            label="Viaggi"
+            value={summary.nextTrip ? (summary.nextTrip.daysToStart ?? '—') : '—'}
+            sub={
+              summary.nextTrip
+                ? `${summary.nextTrip.name || 'Prossimo viaggio'} · ${statusTripLabel(summary.nextTrip.status)}`
+                : 'Nessun viaggio imminente'
+            }
+            onClick={() => onNavigate?.('viaggi')}
+          />
+        </div>
       </section>
 
-      <section className="grid-cards cols-2">
-        <article className="card stack-card">
-          <div className="between">
-            <div>
-              <div className="card-title">Checklist viaggi</div>
-              <div className="muted">Avanzamento complessivo di tutte le valigie</div>
-            </div>
-            <span className="badge">
-              {stats.checklistDone}/{stats.checklistTotal}
-            </span>
+      <section className="card">
+        <div className="between">
+          <div>
+            <div className="section-title">Settimana in arrivo</div>
+            <p className="page-subtitle">Eventi e scadenze dei prossimi 7 giorni.</p>
           </div>
+        </div>
 
-          {stats.checklistTotal === 0 ? (
-            <EmptyBox text="Nessuna checklist disponibile." />
+        <div className="timeline-list">
+          {summary.weeklyEvents.length === 0 ? (
+            <EmptyState text="Nessun evento nei prossimi 7 giorni." />
           ) : (
-            <ProgressBar value={stats.checklistDone} total={stats.checklistTotal} />
+            summary.weeklyEvents.map((event) => (
+              <button
+                key={event.id}
+                type="button"
+                className={`timeline-item ${event.tone}`}
+                onClick={() => onNavigate?.(event.action)}
+                style={{ textAlign: 'left', cursor: 'pointer' }}
+              >
+                <div className="between">
+                  <span className={`badge ${event.badge}`}>{event.type}</span>
+                  <span className="small muted">{fmtDate(event.date)}</span>
+                </div>
+                <div className="strong" style={{ marginTop: 8 }}>{event.title}</div>
+                <div className="small muted" style={{ marginTop: 4 }}>{event.subtitle}</div>
+                <div className="small" style={{ marginTop: 6 }}>{event.meta}</div>
+              </button>
+            ))
           )}
-        </article>
+        </div>
+      </section>
 
-        <article className="card stack-card">
+      <div className="grid-2">
+        <section className="card">
           <div className="between">
             <div>
-              <div className="card-title">Prossima scadenza</div>
-              <div className="muted">Il prossimo elemento utile da monitorare</div>
+              <div className="section-title">Documenti urgenti</div>
+              <p className="page-subtitle">Le prossime scadenze da monitorare.</p>
             </div>
+            <button className="btn btn-sm" onClick={() => onNavigate?.('archivio')}>
+              Apri archivio
+            </button>
           </div>
 
-          {!stats.nextExpiry && !stats.nextAppointment ? (
-            <EmptyBox text="Nessuna scadenza o visita registrata." />
+          <div className="timeline-list" style={{ marginTop: 12 }}>
+            {summary.expiringDocuments.length === 0 ? (
+              <EmptyState text="Nessun documento con scadenza registrata." />
+            ) : (
+              summary.expiringDocuments.map((doc) => (
+                <div key={doc.id} className="timeline-item tl-arch">
+                  <div className="between">
+                    <span className={`badge ${statusBadgeClass(doc.daysToExpiry)}`}>
+                      {deadlineText(doc.daysToExpiry)}
+                    </span>
+                    <span className="small muted">{fmtDate(doc.expiryDate)}</span>
+                  </div>
+                  <div className="strong" style={{ marginTop: 8 }}>{doc.title || 'Documento'}</div>
+                  <div className="small muted" style={{ marginTop: 4 }}>
+                    {doc.category || 'Categoria'} · {doc.owner || 'Intestatario'}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="card">
+          <div className="between">
+            <div>
+              <div className="section-title">Salute attiva</div>
+              <p className="page-subtitle">Visite imminenti e terapie in corso.</p>
+            </div>
+            <button className="btn btn-sm" onClick={() => onNavigate?.('salute')}>
+              Apri salute
+            </button>
+          </div>
+
+          <div className="timeline-list" style={{ marginTop: 12 }}>
+            {summary.upcomingVisits.length === 0 ? (
+              <EmptyState text="Nessuna visita specialistica registrata." />
+            ) : (
+              summary.upcomingVisits.map((visit) => (
+                <div key={visit.id} className="timeline-item tl-health">
+                  <div className="between">
+                    <span className={`badge ${statusBadgeClass(visit.daysToVisit)}`}>
+                      {deadlineText(visit.daysToVisit)}
+                    </span>
+                    <span className="small muted">{fmtDate(visit.date)}</span>
+                  </div>
+                  <div className="strong" style={{ marginTop: 8 }}>
+                    {visit.title || 'Visita specialistica'}
+                  </div>
+                  <div className="small muted" style={{ marginTop: 4 }}>
+                    {visit.specialty || 'Specialistica'} · {visit.doctor || 'Medico da definire'}
+                  </div>
+                  <div className="small" style={{ marginTop: 6 }}>
+                    {visit.location || 'Luogo non indicato'}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+      </div>
+
+      <section className="card">
+        <div className="between">
+          <div>
+            <div className="section-title">Prossimi viaggi</div>
+            <p className="page-subtitle">Le partenze e i piani già presenti in app.</p>
+          </div>
+          <button className="btn btn-sm" onClick={() => onNavigate?.('viaggi')}>
+            Apri viaggi
+          </button>
+        </div>
+
+        <div className="timeline-list" style={{ marginTop: 12 }}>
+          {summary.upcomingTrips.length === 0 ? (
+            <EmptyState text="Nessun viaggio disponibile." />
           ) : (
-            <div className="grid-cards responsive-2">
-              <div className="subsection-box">
-                <div className="card-subtitle">Documento</div>
-                <div>{stats.nextExpiry?.title || '—'}</div>
-                <div className="muted">
-                  {stats.nextExpiry?.expiryDate ? fmtDate(stats.nextExpiry.expiryDate) : 'Nessuna data'}
+            summary.upcomingTrips.map((trip) => (
+              <div key={trip.id} className="timeline-item tl-travel">
+                <div className="between">
+                  <span className="badge badge-travel">{statusTripLabel(trip.status)}</span>
+                  <span className="small muted">
+                    {trip.dateFrom ? `${fmtDate(trip.dateFrom)} → ${fmtDate(trip.dateTo)}` : 'Date non definite'}
+                  </span>
+                </div>
+                <div className="strong" style={{ marginTop: 8 }}>{trip.name || 'Viaggio'}</div>
+                <div className="small muted" style={{ marginTop: 4 }}>
+                  {(trip.persons || []).length} partecipanti
+                </div>
+                <div className="small" style={{ marginTop: 6 }}>
+                  {trip.daysToStart === null
+                    ? 'Data partenza non disponibile'
+                    : trip.daysToStart < 0
+                      ? 'Viaggio già iniziato'
+                      : trip.daysToStart === 0
+                        ? 'Partenza oggi'
+                        : `Partenza tra ${trip.daysToStart} giorni`}
                 </div>
               </div>
-
-              <div className="subsection-box">
-                <div className="card-subtitle">Visita</div>
-                <div>{stats.nextAppointment?.type || '—'}</div>
-                <div className="muted">
-                  {stats.nextAppointment?.date ? fmtDate(stats.nextAppointment.date) : 'Nessuna data'}
-                </div>
-              </div>
-            </div>
+            ))
           )}
-        </article>
-      </section>
+        </div>
 
-      <section className="grid-cards cols-2">
-        <article className="card stack-card">
-          <div className="between">
-            <div>
-              <div className="card-title">Prossimi viaggi</div>
-              <div className="muted">Partenze ordinate per data</div>
-            </div>
-          </div>
-
-          {nextTrips.length === 0 ? (
-            <EmptyBox text="Nessun viaggio registrato." />
-          ) : (
-            <div className="list-clean">
-              {nextTrips.map((trip) => {
-                const days = daysBetween(trip.dateFrom)
-                return (
-                  <div key={trip.id} className="list-item">
-                    <div className="between">
-                      <div>
-                        <div className="card-subtitle">{trip.name || 'Viaggio senza nome'}</div>
-                        <div className="muted">
-                          {fmtDate(trip.dateFrom)} → {fmtDate(trip.dateTo)}
-                        </div>
-                      </div>
-                      <span className={`badge ${tripStatusClass(trip.status)}`}>
-                        {tripStatusLabel(trip.status)}
-                      </span>
-                    </div>
-
-                    <div className="hero-meta" style={{ marginTop: 10 }}>
-                      <span className="meta-chip">👥 {trip.persons?.length || 0} partecipanti</span>
-                      <span className="meta-chip">🏨 {trip.hotels?.length || 0} hotel</span>
-                      <span className="meta-chip">🛫 {trip.flights?.length || 0} voli</span>
-                      <span className="meta-chip">
-                        ⏳ {days === null ? 'data non valida' : days >= 0 ? `${days} giorni` : 'già iniziato'}
-                      </span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </article>
-
-        <article className="card stack-card">
-          <div className="between">
-            <div>
-              <div className="card-title">Priorità rapide</div>
-              <div className="muted">Scadenze e visite più vicine</div>
-            </div>
-          </div>
-
-          {urgentItems.length === 0 ? (
-            <EmptyBox text="Nessuna priorità imminente." />
-          ) : (
-            <div className="list-clean">
-              {urgentItems.map((item) => (
-                <div key={item.id} className="list-item">
-                  <div className="between">
-                    <div>
-                      <div className="card-subtitle">
-                        {item.type === 'document' ? '🗂️' : '🩺'} {item.title}
-                      </div>
-                      <div className="muted">{item.subtitle || '—'}</div>
-                    </div>
-                    <span className={`badge ${item.days < 0 ? 'danger' : item.days <= 7 ? 'warning' : ''}`}>
-                      {item.days < 0 ? 'Scaduto' : `${item.days} gg`}
-                    </span>
-                  </div>
-                  <div className="muted" style={{ marginTop: 8 }}>
-                    Data: {fmtDate(item.date)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </article>
-      </section>
-
-      <section className="grid-cards cols-2">
-        <article className="card stack-card">
-          <div className="between">
-            <div>
-              <div className="card-title">Prossime visite</div>
-              <div className="muted">Agenda sanitaria essenziale</div>
-            </div>
-          </div>
-
-          {upcomingAppointments.length === 0 ? (
-            <EmptyBox text="Nessuna visita in agenda." />
-          ) : (
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Membro</th>
-                    <th>Tipo</th>
-                    <th>Data</th>
-                    <th>Medico</th>
-                    <th>Luogo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {upcomingAppointments.map((row) => {
-                    const member = familyMembers.find((m) => m.id === row.memberId)
-                    return (
-                      <tr key={row.id}>
-                        <td>{member?.initials || member?.name || row.memberId || '—'}</td>
-                        <td>{row.type || '—'}</td>
-                        <td>{fmtDate(row.date)}</td>
-                        <td>{row.doctor || '—'}</td>
-                        <td>{row.location || '—'}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </article>
-
-        <article className="card stack-card">
-          <div className="card-title">Documenti in scadenza</div>
-          <div className="muted">Controllo rapido delle prossime date utili</div>
-
-          {expiringDocuments.length === 0 ? (
-            <EmptyBox text="Nessun documento con scadenza registrata." />
-          ) : (
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Categoria</th>
-                    <th>Intestatario</th>
-                    <th>Titolo</th>
-                    <th>Scadenza</th>
-                    <th>Mancano</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {expiringDocuments.map((row) => {
-                    const days = daysBetween(row.expiryDate)
-                    return (
-                      <tr key={row.id}>
-                        <td>{row.category || '—'}</td>
-                        <td>{row.owner || '—'}</td>
-                        <td>{row.title || '—'}</td>
-                        <td>{fmtDate(row.expiryDate)}</td>
-                        <td>{days === null ? '—' : days >= 0 ? `${days} giorni` : 'scaduto'}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </article>
-      </section>
-
-      <section className="grid-cards cols-2">
-        <article className="card stack-card">
-          <div className="card-title">Ultimi documenti</div>
-          <div className="muted">Inserimenti recenti dall’archivio</div>
-
-          {recentDocuments.length === 0 ? (
-            <EmptyBox text="Nessun documento disponibile." />
-          ) : (
-            <div className="list-clean">
-              {recentDocuments.map((doc) => (
-                <div key={doc.id} className="list-item">
-                  <div className="between">
-                    <div>
-                      <div className="card-subtitle">{doc.title || 'Documento'}</div>
-                      <div className="muted">
-                        {[doc.category, doc.owner].filter(Boolean).join(' · ') || 'Senza dettagli'}
-                      </div>
-                    </div>
-                    <span className="badge">{fmtDate(doc.issueDate)}</span>
-                  </div>
-
-                  <div className="hero-meta" style={{ marginTop: 10 }}>
-                    <span className="meta-chip">🔗 {doc.driveLinks?.length || 0} link</span>
-                    <span className="meta-chip">📂 {doc.storage || 'Nessuna posizione'}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </article>
-
-        <article className="card stack-card">
-          <div className="card-title">Membri famiglia</div>
-          <div className="muted">Scheda sintetica per ogni persona</div>
-
-          {familyOverview.length === 0 ? (
-            <EmptyBox text="Nessun membro disponibile." />
-          ) : (
-            <div className="list-clean">
-              {familyOverview.map((member) => (
-                <div key={member.id} className="list-item">
-                  <div className="between">
-                    <div>
-                      <div className="card-subtitle">
-                        {member.initials} · {member.name}
-                      </div>
-                      <div className="muted">{member.role}</div>
-                    </div>
-                    <span className="badge">{member.bloodGroup}</span>
-                  </div>
-
-                  <div className="hero-meta" style={{ marginTop: 10 }}>
-                    <span className="meta-chip">💊 {member.medications} farmaci</span>
-                    <span className="meta-chip">🩺 {member.doctor}</span>
-                    <span className="meta-chip">
-                      📅 {member.nextAppointment?.date ? fmtDate(member.nextAppointment.date) : 'nessuna visita'}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </article>
+        <div className="row" style={{ marginTop: 14 }}>
+          <span className="badge badge-health">{summary.therapyMedicationsCount} farmaci terapia</span>
+          <span className="badge badge-dash">{summary.medicationsToday} farmaci anagrafica</span>
+          <span className="badge badge-arch">{summary.urgentDocuments.length} scadenze urgenti</span>
+        </div>
       </section>
     </div>
   )
