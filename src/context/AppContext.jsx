@@ -313,6 +313,15 @@ const ensureTherapyMedication = (row = {}) => ({
   notes: row.notes || '',
 })
 
+const ensureMedication = (med = {}) => ({
+  id: med?.id || uid('med'),
+  name: med?.name || '',
+  dosage: med?.dosage || '',
+  schedule: med?.schedule || '',
+  indication: med?.indication || '',
+  notes: med?.notes || '',
+})
+
 const ensureFlight = (flight = {}) => ({
   id: flight.id || uid('flight'),
   company: flight.company || '',
@@ -390,14 +399,7 @@ function normalizeState(raw) {
       chronicConditions: member?.chronicConditions || '',
       currentTherapies: member?.currentTherapies || '',
       emergencyNotes: member?.emergencyNotes || '',
-      medications: ensureArray(member?.medications).map((med) => ({
-        id: med?.id || uid('med'),
-        name: med?.name || '',
-        dosage: med?.dosage || '',
-        schedule: med?.schedule || '',
-        indication: med?.indication || '',
-        notes: med?.notes || '',
-      })),
+      medications: ensureArray(member?.medications).map(ensureMedication),
       documents: {
         idCard: member?.documents?.idCard || '',
         passport: member?.documents?.passport || '',
@@ -406,7 +408,9 @@ function normalizeState(raw) {
       },
     })),
     archiveTables: {
-      categories: ensureArray(source.archiveTables?.categories || fallback.archiveTables.categories).map(ensureArchiveCategory),
+      categories: ensureArray(source.archiveTables?.categories || fallback.archiveTables.categories).map(
+        ensureArchiveCategory,
+      ),
       documents: ensureArray(source.archiveTables?.documents || fallback.archiveTables.documents).map((row) => ({
         id: row?.id || uid('doc'),
         category: row?.category || '',
@@ -433,9 +437,15 @@ function normalizeState(raw) {
       })),
     },
     healthTables: {
-      specialistVisits: ensureArray(source.healthTables?.specialistVisits || fallback.healthTables.specialistVisits).map(ensureVisit),
-      visitTherapies: ensureArray(source.healthTables?.visitTherapies || fallback.healthTables.visitTherapies).map(ensureVisitTherapy),
-      therapyMedications: ensureArray(source.healthTables?.therapyMedications || fallback.healthTables.therapyMedications).map(ensureTherapyMedication),
+      specialistVisits: ensureArray(
+        source.healthTables?.specialistVisits || fallback.healthTables.specialistVisits,
+      ).map(ensureVisit),
+      visitTherapies: ensureArray(
+        source.healthTables?.visitTherapies || fallback.healthTables.visitTherapies,
+      ).map(ensureVisitTherapy),
+      therapyMedications: ensureArray(
+        source.healthTables?.therapyMedications || fallback.healthTables.therapyMedications,
+      ).map(ensureTherapyMedication),
       legacyAppointments: ensureArray(source.healthTables?.legacyAppointments || source.healthTables?.appointments || []),
       legacyTherapies: ensureArray(source.healthTables?.legacyTherapies || source.healthTables?.therapies || []),
     },
@@ -463,16 +473,10 @@ export function AppProvider({ children }) {
   })
   const [loadingData, setLoadingData] = useState(true)
   const [syncError, setSyncError] = useState('')
-
   const saveTimerRef = useRef(null)
   const hasLoadedRef = useRef(false)
   const realtimeChannelRef = useRef(null)
   const lastSavedAtRef = useRef('')
-  const lastLocalEditAtRef = useRef(0)
-
-  const markLocalEdit = useCallback(() => {
-    lastLocalEditAtRef.current = Date.now()
-  }, [])
 
   const hydrate = useCallback((payload) => {
     const normalized = normalizeState(payload)
@@ -593,7 +597,6 @@ export function AppProvider({ children }) {
           (payload) => {
             const nextUpdatedAt = payload.new?.updated_at || ''
             if (nextUpdatedAt && nextUpdatedAt === lastSavedAtRef.current) return
-            if (Date.now() - lastLocalEditAtRef.current < 2000) return
             if (payload.new?.payload) {
               lastSavedAtRef.current = nextUpdatedAt
               hydrate(payload.new.payload)
@@ -614,7 +617,7 @@ export function AppProvider({ children }) {
         realtimeChannelRef.current = null
       }
     }
-  }, [hydrate, loadRemoteState])
+  }, [hydrate, loadRemoteState, saveToSupabase])
 
   const payloadForSave = useMemo(
     () => ({ trips, familyMembers, archiveTables, healthTables }),
@@ -632,56 +635,65 @@ export function AppProvider({ children }) {
   }, [payloadForSave, saveToSupabase])
 
   const updateFamilyMember = useCallback((memberId, payload) => {
-    markLocalEdit()
     setFamilyMembers((prev) => prev.map((member) => (member.id === memberId ? { ...member, ...payload } : member)))
-  }, [markLocalEdit])
+  }, [])
 
-  const addMedicationToMember = useCallback((memberId, label = 'Nuovo farmaco') => {
-    markLocalEdit()
+  const createMedicationForMember = useCallback((memberId, payload = {}) => {
+    const nextMedication = ensureMedication({ ...payload, id: uid('med') })
     setFamilyMembers((prev) =>
       prev.map((member) =>
         member.id === memberId
           ? {
               ...member,
-              medications: [
-                ...ensureArray(member.medications),
-                { id: uid('med'), name: label, dosage: '', schedule: '', indication: '', notes: '' },
-              ],
+              medications: [...ensureArray(member.medications).map(ensureMedication), nextMedication],
             }
           : member,
       ),
     )
-  }, [markLocalEdit])
+    return nextMedication.id
+  }, [])
 
-  const updateMedicationFromMember = useCallback((memberId, medicationId, payload) => {
-    markLocalEdit()
+  const updateMemberMedication = useCallback((memberId, medicationId, payload) => {
     setFamilyMembers((prev) =>
       prev.map((member) =>
         member.id === memberId
           ? {
               ...member,
               medications: ensureArray(member.medications).map((med) =>
-                med.id === medicationId ? { ...med, ...payload } : med,
+                med.id === medicationId ? ensureMedication({ ...med, ...payload }) : ensureMedication(med),
               ),
             }
           : member,
       ),
     )
-  }, [markLocalEdit])
+  }, [])
 
-  const deleteMedicationFromMember = useCallback((memberId, medicationId) => {
-    markLocalEdit()
+  const deleteMemberMedication = useCallback((memberId, medicationId) => {
     setFamilyMembers((prev) =>
       prev.map((member) =>
         member.id === memberId
-          ? { ...member, medications: ensureArray(member.medications).filter((med) => med.id !== medicationId) }
+          ? {
+              ...member,
+              medications: ensureArray(member.medications).filter((med) => med.id !== medicationId),
+            }
           : member,
       ),
     )
-  }, [markLocalEdit])
+  }, [])
+
+  const addMedicationToMember = useCallback((memberId, label = 'Nuovo farmaco') => {
+    createMedicationForMember(memberId, { name: label })
+  }, [createMedicationForMember])
+
+  const updateMedicationFromMember = useCallback((memberId, medicationId, payload) => {
+    updateMemberMedication(memberId, medicationId, payload)
+  }, [updateMemberMedication])
+
+  const deleteMedicationFromMember = useCallback((memberId, medicationId) => {
+    deleteMemberMedication(memberId, medicationId)
+  }, [deleteMemberMedication])
 
   const updateArchive = useCallback((updater) => {
-    markLocalEdit()
     setArchiveTables((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater
       return {
@@ -690,10 +702,9 @@ export function AppProvider({ children }) {
         warranties: ensureArray(next.warranties),
       }
     })
-  }, [markLocalEdit])
+  }, [])
 
   const updateHealth = useCallback((updater) => {
-    markLocalEdit()
     setHealthTables((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater
       return {
@@ -704,10 +715,9 @@ export function AppProvider({ children }) {
         legacyTherapies: ensureArray(next.legacyTherapies),
       }
     })
-  }, [markLocalEdit])
+  }, [])
 
   const addTrip = useCallback((payload) => {
-    markLocalEdit()
     setTrips((prev) => [
       ...prev,
       ensureTrip({
@@ -720,20 +730,17 @@ export function AppProvider({ children }) {
         })),
       }),
     ])
-  }, [markLocalEdit])
+  }, [])
 
   const updateTrip = useCallback((tripId, payload) => {
-    markLocalEdit()
     setTrips((prev) => prev.map((trip) => (trip.id === tripId ? ensureTrip({ ...trip, ...payload }) : ensureTrip(trip))))
-  }, [markLocalEdit])
+  }, [])
 
   const deleteTrip = useCallback((tripId) => {
-    markLocalEdit()
     setTrips((prev) => prev.filter((trip) => trip.id !== tripId))
-  }, [markLocalEdit])
+  }, [])
 
   const toggleTripMember = useCallback((tripId, memberId) => {
-    markLocalEdit()
     setTrips((prev) =>
       updateTripInList(prev, tripId, (trip) => ({
         ...trip,
@@ -742,20 +749,24 @@ export function AppProvider({ children }) {
           : [...trip.persons, memberId],
       })),
     )
-  }, [markLocalEdit])
+  }, [])
 
   const addFlight = useCallback((tripId, payload) => {
-    markLocalEdit()
     setTrips((prev) =>
       updateTripInList(prev, tripId, (trip) => ({
         ...trip,
-        flights: [...trip.flights, ensureFlight({ ...payload, companyUrl: payload.companyUrl || airlineUrl(payload.company) })],
+        flights: [
+          ...trip.flights,
+          ensureFlight({
+            ...payload,
+            companyUrl: payload.companyUrl || airlineUrl(payload.company),
+          }),
+        ],
       })),
     )
-  }, [markLocalEdit])
+  }, [])
 
   const updateFlight = useCallback((tripId, flightId, payload) => {
-    markLocalEdit()
     setTrips((prev) =>
       updateTripInList(prev, tripId, (trip) => ({
         ...trip,
@@ -770,20 +781,18 @@ export function AppProvider({ children }) {
         ),
       })),
     )
-  }, [markLocalEdit])
+  }, [])
 
   const deleteFlight = useCallback((tripId, flightId) => {
-    markLocalEdit()
     setTrips((prev) =>
       updateTripInList(prev, tripId, (trip) => ({
         ...trip,
         flights: trip.flights.filter((flight) => flight.id !== flightId),
       })),
     )
-  }, [markLocalEdit])
+  }, [])
 
   const invertFlightRoute = useCallback((tripId, flightId) => {
-    markLocalEdit()
     setTrips((prev) =>
       updateTripInList(prev, tripId, (trip) => ({
         ...trip,
@@ -792,7 +801,36 @@ export function AppProvider({ children }) {
         ),
       })),
     )
-  }, [markLocalEdit])
+  }, [])
+
+  const addHotel = useCallback((tripId, payload) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        hotels: [...trip.hotels, ensureHotel({ ...payload, id: uid('hotel') })],
+      })),
+    )
+  }, [])
+
+  const updateHotel = useCallback((tripId, hotelId, payload) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        hotels: trip.hotels.map((hotel) =>
+          hotel.id === hotelId ? ensureHotel({ ...hotel, ...payload }) : ensureHotel(hotel),
+        ),
+      })),
+    )
+  }, [])
+
+  const deleteHotel = useCallback((tripId, hotelId) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        hotels: trip.hotels.filter((hotel) => hotel.id !== hotelId),
+      })),
+    )
+  }, [])
 
   const value = useMemo(
     () => ({
@@ -810,7 +848,13 @@ export function AppProvider({ children }) {
       updateFlight,
       deleteFlight,
       invertFlightRoute,
+      addHotel,
+      updateHotel,
+      deleteHotel,
       updateFamilyMember,
+      createMedicationForMember,
+      updateMemberMedication,
+      deleteMemberMedication,
       addMedicationToMember,
       updateMedicationFromMember,
       deleteMedicationFromMember,
@@ -832,7 +876,13 @@ export function AppProvider({ children }) {
       updateFlight,
       deleteFlight,
       invertFlightRoute,
+      addHotel,
+      updateHotel,
+      deleteHotel,
       updateFamilyMember,
+      createMedicationForMember,
+      updateMemberMedication,
+      deleteMemberMedication,
       addMedicationToMember,
       updateMedicationFromMember,
       deleteMedicationFromMember,

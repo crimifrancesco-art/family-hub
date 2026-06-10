@@ -4,52 +4,48 @@ import { useAppContext } from '../context/AppContext'
 const uid = (prefix = 'id') =>
   `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 
-function fmtDate(value) {
-  if (!value) return '—'
-  const parts = String(value).split('-')
-  if (parts.length !== 3) return value
+function fmt(iso) {
+  if (!iso) return '—'
+  const parts = String(iso).split('-')
+  if (parts.length < 3) return iso
   return `${parts[2]}/${parts[1]}/${parts[0]}`
 }
 
-function todayIso() {
-  const now = new Date()
-  const y = now.getFullYear()
-  const m = String(now.getMonth() + 1).padStart(2, '0')
-  const d = String(now.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-
 function memberLabel(member) {
-  return member?.name || member?.role || member?.initials || 'Membro'
+  return member?.name || member?.role || member?.initials || member?.id || 'Membro'
 }
 
-function buildGoogleCalendarUrl({ title, date, location, details }) {
+function daysBetween(from, to = new Date()) {
+  if (!from) return null
+  const start = new Date(from)
+  const end = new Date(to)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
+  const diff = start.getTime() - end.getTime()
+  return Math.ceil((start.getTime() - end.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+function statusBadge(days) {
+  if (days === null) return 'badge-muted'
+  if (days < 0) return 'badge-danger'
+  if (days <= 7) return 'badge-warning'
+  return 'badge-success'
+}
+
+function statusText(days) {
+  if (days === null) return 'Senza data'
+  if (days < 0) return 'Scaduto'
+  if (days === 0) return 'Oggi'
+  if (days === 1) return 'Domani'
+  return `${days} gg`
+}
+
+function calendarLink({ title, date, details = '' }) {
   if (!date) return ''
   const start = `${date.replaceAll('-', '')}T090000`
   const end = `${date.replaceAll('-', '')}T100000`
-  const params = new URLSearchParams({
-    action: 'TEMPLATE',
-    text: title || 'Visita specialistica',
-    dates: `${start}/${end}`,
-    details: details || '',
-    location: location || '',
-  })
-  return `https://calendar.google.com/calendar/render?${params.toString()}`
-}
-
-function EmptyState({ text }) {
-  return <div className="empty">{text}</div>
-}
-
-function HealthMetric({ icon, label, value, sub }) {
-  return (
-    <div className="widget-card wc-health" style={{ cursor: 'default' }}>
-      <div className="widget-icon">{icon}</div>
-      <div className="widget-label">{label}</div>
-      <div className="widget-value">{value}</div>
-      <div className="widget-sub">{sub}</div>
-    </div>
-  )
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
+    title || 'Promemoria salute',
+  )}&dates=${start}/${end}&details=${encodeURIComponent(details)}`
 }
 
 export default function SalutePage() {
@@ -65,73 +61,143 @@ export default function SalutePage() {
     updateHealth,
   } = useAppContext()
 
-  const members = familyMembers || []
-  const [selectedMemberId, setSelectedMemberId] = useState(members[0]?.id || '')
-  const [openVisitId, setOpenVisitId] = useState('')
-  const [openTherapyId, setOpenTherapyId] = useState('')
+  const [selectedMemberId, setSelectedMemberId] = useState(familyMembers[0]?.id || '')
+  const [visitForm, setVisitForm] = useState({
+    title: '',
+    specialty: '',
+    date: '',
+    doctor: '',
+    location: '',
+    googleCalendarUrl: '',
+    driveUrl: '',
+    notes: '',
+  })
+  const [therapyForm, setTherapyForm] = useState({
+    visitId: '',
+    title: '',
+    startDate: '',
+    endDate: '',
+    prescribingDoctor: '',
+    driveUrl: '',
+    notes: '',
+  })
+  const [therapyMedicationForm, setTherapyMedicationForm] = useState({
+    therapyId: '',
+    medication: '',
+    dosage: '',
+    frequency: '',
+    timeSlots: '',
+    notes: '',
+  })
+  const [personalMedicationForm, setPersonalMedicationForm] = useState({
+    name: '',
+    dosage: '',
+    schedule: '',
+    indication: '',
+    notes: '',
+  })
 
-  const selectedMember = useMemo(
-    () => members.find((member) => member.id === selectedMemberId) || members[0] || null,
-    [members, selectedMemberId],
+  const selectedMember =
+    familyMembers.find((member) => member.id === selectedMemberId) || familyMembers[0] || null
+
+  const memberVisits = useMemo(
+    () =>
+      (healthTables?.specialistVisits || [])
+        .filter((visit) => visit.memberId === selectedMemberId)
+        .sort((a, b) => (a.date || '9999-99-99').localeCompare(b.date || '9999-99-99')),
+    [healthTables, selectedMemberId],
   )
 
-  const specialistVisits = healthTables?.specialistVisits || []
-  const visitTherapies = healthTables?.visitTherapies || []
-  const therapyMedications = healthTables?.therapyMedications || []
+  const memberTherapies = useMemo(
+    () =>
+      (healthTables?.visitTherapies || [])
+        .filter((therapy) => therapy.memberId === selectedMemberId)
+        .sort((a, b) => (a.startDate || '9999-99-99').localeCompare(b.startDate || '9999-99-99')),
+    [healthTables, selectedMemberId],
+  )
 
-  const memberVisits = useMemo(() => {
-    if (!selectedMember) return []
-    return specialistVisits
-      .filter((visit) => visit.memberId === selectedMember.id)
-      .sort((a, b) => String(a.date || '9999-99-99').localeCompare(String(b.date || '9999-99-99')))
-  }, [selectedMember, specialistVisits])
+  const memberTherapyMedications = useMemo(
+    () =>
+      (healthTables?.therapyMedications || []).filter(
+        (item) => item.memberId === selectedMemberId,
+      ),
+    [healthTables, selectedMemberId],
+  )
 
-  const memberTherapies = useMemo(() => {
-    if (!selectedMember) return []
-    return visitTherapies.filter((therapy) => therapy.memberId === selectedMember.id)
-  }, [selectedMember, visitTherapies])
+  const visitMap = useMemo(
+    () => Object.fromEntries(memberVisits.map((visit) => [visit.id, visit])),
+    [memberVisits],
+  )
 
-  const memberTherapyMeds = useMemo(() => {
-    if (!selectedMember) return []
-    return therapyMedications.filter((med) => med.memberId === selectedMember.id)
-  }, [selectedMember, therapyMedications])
+  const therapyMap = useMemo(
+    () => Object.fromEntries(memberTherapies.map((therapy) => [therapy.id, therapy])),
+    [memberTherapies],
+  )
 
-  const healthSummary = useMemo(() => {
-    const memberMedications = selectedMember?.medications || []
-    const nextVisit =
-      memberVisits.find((visit) => !visit.date || visit.date >= todayIso()) || memberVisits[0] || null
+  const activePersonalMedications = selectedMember?.medications || []
 
-    const activeTherapies = memberTherapies.filter((therapy) => {
-      const start = therapy.startDate || ''
-      const end = therapy.endDate || ''
-      const today = todayIso()
-      if (!start && !end) return true
-      if (start && start > today) return false
-      if (end && end < today) return false
-      return true
-    })
-
+  const summary = useMemo(() => {
+    const nextVisit = memberVisits.find((visit) => visit.date && daysBetween(visit.date) >= 0)
     return {
-      memberMedicationsCount: memberMedications.filter((med) => med.name || med.schedule || med.dosage).length,
-      visitsCount: memberVisits.length,
+      medications: activePersonalMedications.length,
+      visits: memberVisits.length,
+      therapies: memberTherapies.length,
       nextVisit,
-      activeTherapiesCount: activeTherapies.length,
-      therapyDrugsCount: memberTherapyMeds.length,
     }
-  }, [memberTherapies, memberTherapyMeds, memberVisits, selectedMember])
+  }, [activePersonalMedications, memberVisits, memberTherapies])
 
-  function patchMember(field, value) {
+  const handleMemberField = (field, value) => {
     if (!selectedMember) return
     updateFamilyMember(selectedMember.id, { [field]: value })
   }
 
-  function updateMemberMedication(medicationId, patch) {
-    if (!selectedMember) return
-    updateMedicationFromMember(selectedMember.id, medicationId, patch)
+  const handleAddPersonalMedication = (event) => {
+    event.preventDefault()
+    if (!selectedMember || !personalMedicationForm.name.trim()) return
+
+    addMedicationToMember(selectedMember.id, personalMedicationForm.name.trim())
+
+    const currentMeds = selectedMember.medications || []
+    const newIdGuess = currentMeds[currentMeds.length - 1]?.id
+
+    if (newIdGuess) {
+      updateMedicationFromMember(selectedMember.id, newIdGuess, {
+        name: personalMedicationForm.name.trim(),
+        dosage: personalMedicationForm.dosage.trim(),
+        schedule: personalMedicationForm.schedule.trim(),
+        indication: personalMedicationForm.indication.trim(),
+        notes: personalMedicationForm.notes.trim(),
+      })
+    }
+
+    setTimeout(() => {
+      const latestMember =
+        familyMembers.find((member) => member.id === selectedMember.id) || selectedMember
+      const latestMedication = latestMember.medications?.[latestMember.medications.length - 1]
+      if (latestMedication) {
+        updateMedicationFromMember(selectedMember.id, latestMedication.id, {
+          name: personalMedicationForm.name.trim(),
+          dosage: personalMedicationForm.dosage.trim(),
+          schedule: personalMedicationForm.schedule.trim(),
+          indication: personalMedicationForm.indication.trim(),
+          notes: personalMedicationForm.notes.trim(),
+        })
+      }
+    }, 0)
+
+    setPersonalMedicationForm({
+      name: '',
+      dosage: '',
+      schedule: '',
+      indication: '',
+      notes: '',
+    })
   }
 
-  function addVisit() {
-    if (!selectedMember) return
+  const handleAddVisit = (event) => {
+    event.preventDefault()
+    if (!selectedMember || !visitForm.title.trim()) return
+
     updateHealth((prev) => ({
       ...prev,
       specialistVisits: [
@@ -139,169 +205,90 @@ export default function SalutePage() {
         {
           id: uid('visit'),
           memberId: selectedMember.id,
-          title: 'Nuova visita specialistica',
-          specialty: '',
-          date: '',
-          doctor: '',
-          location: '',
-          googleCalendarUrl: '',
-          driveLinks: [],
-          notes: '',
+          title: visitForm.title.trim(),
+          specialty: visitForm.specialty.trim(),
+          date: visitForm.date,
+          doctor: visitForm.doctor.trim(),
+          location: visitForm.location.trim(),
+          googleCalendarUrl: visitForm.googleCalendarUrl.trim(),
+          driveLinks: visitForm.driveUrl.trim()
+            ? [{ id: uid('lnk'), label: 'Drive', url: visitForm.driveUrl.trim() }]
+            : [],
+          notes: visitForm.notes.trim(),
         },
       ],
     }))
+
+    setVisitForm({
+      title: '',
+      specialty: '',
+      date: '',
+      doctor: '',
+      location: '',
+      googleCalendarUrl: '',
+      driveUrl: '',
+      notes: '',
+    })
   }
 
-  function updateVisit(visitId, patch) {
-    updateHealth((prev) => ({
-      ...prev,
-      specialistVisits: prev.specialistVisits.map((visit) =>
-        visit.id === visitId ? { ...visit, ...patch } : visit,
-      ),
-    }))
-  }
-
-  function deleteVisit(visitId) {
+  const handleDeleteVisit = (visitId) => {
     updateHealth((prev) => ({
       ...prev,
       specialistVisits: prev.specialistVisits.filter((visit) => visit.id !== visitId),
       visitTherapies: prev.visitTherapies.filter((therapy) => therapy.visitId !== visitId),
-      therapyMedications: prev.therapyMedications.filter((med) => med.visitId !== visitId),
-    }))
-    if (openVisitId === visitId) setOpenVisitId('')
-  }
-
-  function addVisitDriveLink(visitId) {
-    updateHealth((prev) => ({
-      ...prev,
-      specialistVisits: prev.specialistVisits.map((visit) =>
-        visit.id === visitId
-          ? {
-              ...visit,
-              driveLinks: [...(visit.driveLinks || []), { id: uid('lnk'), label: '', url: '' }],
-            }
-          : visit,
-      ),
+      therapyMedications: prev.therapyMedications.filter((row) => row.visitId !== visitId),
     }))
   }
 
-  function updateVisitDriveLink(visitId, linkId, patch) {
-    updateHealth((prev) => ({
-      ...prev,
-      specialistVisits: prev.specialistVisits.map((visit) =>
-        visit.id === visitId
-          ? {
-              ...visit,
-              driveLinks: (visit.driveLinks || []).map((link) =>
-                link.id === linkId ? { ...link, ...patch } : link,
-              ),
-            }
-          : visit,
-      ),
-    }))
-  }
+  const handleAddTherapy = (event) => {
+    event.preventDefault()
+    if (!selectedMember || !therapyForm.title.trim()) return
 
-  function removeVisitDriveLink(visitId, linkId) {
-    updateHealth((prev) => ({
-      ...prev,
-      specialistVisits: prev.specialistVisits.map((visit) =>
-        visit.id === visitId
-          ? {
-              ...visit,
-              driveLinks: (visit.driveLinks || []).filter((link) => link.id !== linkId),
-            }
-          : visit,
-      ),
-    }))
-  }
-
-  function addTherapy(visitId) {
-    if (!selectedMember) return
-    const nextId = uid('therapy')
     updateHealth((prev) => ({
       ...prev,
       visitTherapies: [
         ...prev.visitTherapies,
         {
-          id: nextId,
+          id: uid('therapy'),
           memberId: selectedMember.id,
-          visitId,
-          title: 'Nuova terapia',
-          startDate: '',
-          endDate: '',
-          prescribingDoctor: '',
-          driveLinks: [],
-          notes: '',
+          visitId: therapyForm.visitId,
+          title: therapyForm.title.trim(),
+          startDate: therapyForm.startDate,
+          endDate: therapyForm.endDate,
+          prescribingDoctor: therapyForm.prescribingDoctor.trim(),
+          driveLinks: therapyForm.driveUrl.trim()
+            ? [{ id: uid('lnk'), label: 'Drive', url: therapyForm.driveUrl.trim() }]
+            : [],
+          notes: therapyForm.notes.trim(),
         },
       ],
     }))
-    setOpenTherapyId(nextId)
+
+    setTherapyForm({
+      visitId: '',
+      title: '',
+      startDate: '',
+      endDate: '',
+      prescribingDoctor: '',
+      driveUrl: '',
+      notes: '',
+    })
   }
 
-  function updateTherapy(therapyId, patch) {
-    updateHealth((prev) => ({
-      ...prev,
-      visitTherapies: prev.visitTherapies.map((therapy) =>
-        therapy.id === therapyId ? { ...therapy, ...patch } : therapy,
-      ),
-    }))
-  }
-
-  function deleteTherapy(therapyId) {
+  const handleDeleteTherapy = (therapyId) => {
     updateHealth((prev) => ({
       ...prev,
       visitTherapies: prev.visitTherapies.filter((therapy) => therapy.id !== therapyId),
-      therapyMedications: prev.therapyMedications.filter((med) => med.therapyId !== therapyId),
-    }))
-    if (openTherapyId === therapyId) setOpenTherapyId('')
-  }
-
-  function addTherapyDriveLink(therapyId) {
-    updateHealth((prev) => ({
-      ...prev,
-      visitTherapies: prev.visitTherapies.map((therapy) =>
-        therapy.id === therapyId
-          ? {
-              ...therapy,
-              driveLinks: [...(therapy.driveLinks || []), { id: uid('lnk'), label: '', url: '' }],
-            }
-          : therapy,
-      ),
+      therapyMedications: prev.therapyMedications.filter((row) => row.therapyId !== therapyId),
     }))
   }
 
-  function updateTherapyDriveLink(therapyId, linkId, patch) {
-    updateHealth((prev) => ({
-      ...prev,
-      visitTherapies: prev.visitTherapies.map((therapy) =>
-        therapy.id === therapyId
-          ? {
-              ...therapy,
-              driveLinks: (therapy.driveLinks || []).map((link) =>
-                link.id === linkId ? { ...link, ...patch } : link,
-              ),
-            }
-          : therapy,
-      ),
-    }))
-  }
+  const handleAddTherapyMedication = (event) => {
+    event.preventDefault()
+    if (!selectedMember || !therapyMedicationForm.medication.trim()) return
 
-  function removeTherapyDriveLink(therapyId, linkId) {
-    updateHealth((prev) => ({
-      ...prev,
-      visitTherapies: prev.visitTherapies.map((therapy) =>
-        therapy.id === therapyId
-          ? {
-              ...therapy,
-              driveLinks: (therapy.driveLinks || []).filter((link) => link.id !== linkId),
-            }
-          : therapy,
-      ),
-    }))
-  }
+    const therapy = memberTherapies.find((item) => item.id === therapyMedicationForm.therapyId)
 
-  function addTherapyMedication(visitId, therapyId) {
-    if (!selectedMember) return
     updateHealth((prev) => ({
       ...prev,
       therapyMedications: [
@@ -309,31 +296,31 @@ export default function SalutePage() {
         {
           id: uid('tmed'),
           memberId: selectedMember.id,
-          visitId,
-          therapyId,
-          medication: '',
-          dosage: '',
-          frequency: '',
-          timeSlots: '',
-          notes: '',
+          visitId: therapy?.visitId || '',
+          therapyId: therapyMedicationForm.therapyId,
+          medication: therapyMedicationForm.medication.trim(),
+          dosage: therapyMedicationForm.dosage.trim(),
+          frequency: therapyMedicationForm.frequency.trim(),
+          timeSlots: therapyMedicationForm.timeSlots.trim(),
+          notes: therapyMedicationForm.notes.trim(),
         },
       ],
     }))
+
+    setTherapyMedicationForm({
+      therapyId: '',
+      medication: '',
+      dosage: '',
+      frequency: '',
+      timeSlots: '',
+      notes: '',
+    })
   }
 
-  function updateTherapyMedication(medicationId, patch) {
+  const handleDeleteTherapyMedication = (medicationId) => {
     updateHealth((prev) => ({
       ...prev,
-      therapyMedications: prev.therapyMedications.map((med) =>
-        med.id === medicationId ? { ...med, ...patch } : med,
-      ),
-    }))
-  }
-
-  function deleteTherapyMedication(medicationId) {
-    updateHealth((prev) => ({
-      ...prev,
-      therapyMedications: prev.therapyMedications.filter((med) => med.id !== medicationId),
+      therapyMedications: prev.therapyMedications.filter((item) => item.id !== medicationId),
     }))
   }
 
@@ -341,21 +328,9 @@ export default function SalutePage() {
     return (
       <div className="page-stack">
         <section className="hero-card">
-          <div className="eyebrow">Salute famiglia</div>
-          <h1 className="page-title">Sto caricando i dati sanitari</h1>
-          <p className="page-subtitle">Visite, terapie, farmaci e documenti clinici.</p>
-        </section>
-      </div>
-    )
-  }
-
-  if (!selectedMember) {
-    return (
-      <div className="page-stack">
-        <section className="hero-card">
-          <div className="eyebrow">Salute famiglia</div>
-          <h1 className="page-title">Nessun membro disponibile</h1>
-          <p className="page-subtitle">Aggiungi o sincronizza i membri della famiglia.</p>
+          <div className="eyebrow">Salute</div>
+          <h1>Caricamento schede sanitarie…</h1>
+          <p className="page-subtitle">Sto caricando anagrafiche, farmaci, visite e terapie.</p>
         </section>
       </div>
     )
@@ -364,522 +339,857 @@ export default function SalutePage() {
   return (
     <div className="page-stack">
       <section className="hero-card">
-        <div className="eyebrow">Salute famiglia</div>
-        <div className="page-header">
-          <div>
-            <h1 className="page-title">Salute & Terapie</h1>
-            <p className="page-subtitle">
-              Un unico spazio per anagrafica sanitaria, visite, terapie farmacologiche e promemoria.
-            </p>
-          </div>
-          <div className="row">
-            <span className="badge badge-health">{members.length} membri</span>
-            <span className="badge badge-dash">{healthSummary.visitsCount} visite</span>
-            <span className="badge badge-health">{healthSummary.activeTherapiesCount} terapie attive</span>
-          </div>
-        </div>
+        <div className="eyebrow">Salute</div>
+        <h1>Scheda sanitaria sintetica</h1>
+        <p className="page-subtitle">
+          Ogni componente ha una vista breve, con tabelle separate per dati inseriti e moduli di
+          aggiunta.
+        </p>
         {syncError ? <div className="app-status">{syncError}</div> : null}
       </section>
 
-      <section className="card">
-        <div className="section-title">Seleziona membro</div>
-        <div className="row">
-          {members.map((member) => (
+      <section className="card stack-card">
+        <div className="page-header">
+          <div>
+            <div className="card-title">Componenti famiglia</div>
+            <div className="card-subtitle">Seleziona la persona da gestire.</div>
+          </div>
+        </div>
+
+        <div className="family-switcher">
+          {familyMembers.map((member) => (
             <button
               key={member.id}
               type="button"
-              className={`member-chip ${selectedMember.id === member.id ? 'active' : ''}`}
-              onClick={() => {
-                setSelectedMemberId(member.id)
-                setOpenVisitId('')
-                setOpenTherapyId('')
-              }}
+              className={`member-chip ${selectedMemberId === member.id ? 'active' : ''}`}
+              onClick={() => setSelectedMemberId(member.id)}
             >
-              <span className="chip-avatar">{member.initials || 'FH'}</span>
+              <span className="chip-avatar">{member.initials || member.name?.slice(0, 2) || 'FM'}</span>
               <span>{memberLabel(member)}</span>
             </button>
           ))}
         </div>
       </section>
 
-      <section>
-        <div className="section-title">Panoramica {memberLabel(selectedMember)}</div>
-        <div className="grid-2 widget-grid">
-          <HealthMetric
-            icon="💊"
-            label="Farmaci personali"
-            value={healthSummary.memberMedicationsCount}
-            sub="Farmaci salvati nell’anagrafica"
-          />
-          <HealthMetric
-            icon="🩺"
-            label="Prossima visita"
-            value={healthSummary.nextVisit ? fmtDate(healthSummary.nextVisit.date) : '—'}
-            sub={healthSummary.nextVisit ? (healthSummary.nextVisit.title || 'Visita specialistica') : 'Nessuna visita'}
-          />
-          <HealthMetric
-            icon="📋"
-            label="Terapie attive"
-            value={healthSummary.activeTherapiesCount}
-            sub="Terapie attualmente in corso"
-          />
-          <HealthMetric
-            icon="⏰"
-            label="Farmaci terapia"
-            value={healthSummary.therapyDrugsCount}
-            sub="Farmaci legati a terapie mediche"
-          />
-        </div>
-      </section>
-
-      <section className="card">
-        <div className="between">
-          <div>
-            <div className="section-title">Scheda sanitaria</div>
-            <p className="page-subtitle">Dati rapidi e informazioni mediche essenziali.</p>
-          </div>
-        </div>
-
-        <div className="form-grid" style={{ marginTop: 12 }}>
-          <div className="fg">
-            <label className="fl">Nome</label>
-            <input className="fi fi-health" value={selectedMember.name || ''} onChange={(e) => patchMember('name', e.target.value)} />
-          </div>
-          <div className="fg">
-            <label className="fl">Ruolo</label>
-            <input className="fi fi-health" value={selectedMember.role || ''} onChange={(e) => patchMember('role', e.target.value)} />
-          </div>
-          <div className="fg">
-            <label className="fl">Data di nascita</label>
-            <input className="fi fi-health" type="date" value={selectedMember.birthDate || ''} onChange={(e) => patchMember('birthDate', e.target.value)} />
-          </div>
-          <div className="fg">
-            <label className="fl">Gruppo sanguigno</label>
-            <input className="fi fi-health" value={selectedMember.bloodGroup || ''} onChange={(e) => patchMember('bloodGroup', e.target.value)} />
-          </div>
-          <div className="fg">
-            <label className="fl">Codice fiscale</label>
-            <input className="fi fi-health" value={selectedMember.fiscalCode || ''} onChange={(e) => patchMember('fiscalCode', e.target.value)} />
-          </div>
-          <div className="fg">
-            <label className="fl">Telefono</label>
-            <input className="fi fi-health" value={selectedMember.phone || ''} onChange={(e) => patchMember('phone', e.target.value)} />
-          </div>
-          <div className="fg">
-            <label className="fl">Email</label>
-            <input className="fi fi-health" value={selectedMember.email || ''} onChange={(e) => patchMember('email', e.target.value)} />
-          </div>
-          <div className="fg">
-            <label className="fl">Medico</label>
-            <input className="fi fi-health" value={selectedMember.doctor || ''} onChange={(e) => patchMember('doctor', e.target.value)} />
-          </div>
-          <div className="fg">
-            <label className="fl">Pediatra</label>
-            <input className="fi fi-health" value={selectedMember.pediatrician || ''} onChange={(e) => patchMember('pediatrician', e.target.value)} />
-          </div>
-          <div className="fg col-full">
-            <label className="fl">Allergie</label>
-            <textarea className="fi fi-health" value={selectedMember.allergies || ''} onChange={(e) => patchMember('allergies', e.target.value)} />
-          </div>
-          <div className="fg col-full">
-            <label className="fl">Patologie croniche</label>
-            <textarea className="fi fi-health" value={selectedMember.chronicConditions || ''} onChange={(e) => patchMember('chronicConditions', e.target.value)} />
-          </div>
-          <div className="fg col-full">
-            <label className="fl">Terapie correnti</label>
-            <textarea className="fi fi-health" value={selectedMember.currentTherapies || ''} onChange={(e) => patchMember('currentTherapies', e.target.value)} />
-          </div>
-          <div className="fg col-full">
-            <label className="fl">Note emergenza</label>
-            <textarea className="fi fi-health" value={selectedMember.emergencyNotes || ''} onChange={(e) => patchMember('emergencyNotes', e.target.value)} />
-          </div>
-        </div>
-      </section>
-
-      <section className="card">
-        <div className="between">
-          <div>
-            <div className="section-title">Farmaci personali</div>
-            <p className="page-subtitle">Farmaci abituali del membro, indipendenti da una terapia specifica.</p>
-          </div>
-          <button className="btn btn-health" onClick={() => addMedicationToMember(selectedMember.id, 'Nuovo farmaco')}>
-            + Aggiungi farmaco
-          </button>
-        </div>
-
-        <div className="timeline-list" style={{ marginTop: 12 }}>
-          {(selectedMember.medications || []).length === 0 ? (
-            <EmptyState text="Nessun farmaco personale registrato." />
-          ) : (
-            (selectedMember.medications || []).map((medication) => (
-              <div key={medication.id} className="subsection-box">
-                <div className="form-grid">
-                  <div className="fg">
-                    <label className="fl">Farmaco</label>
-                    <input
-                      className="fi fi-health"
-                      value={medication.name || ''}
-                      onChange={(e) => updateMemberMedication(medication.id, { name: e.target.value })}
-                    />
-                  </div>
-                  <div className="fg">
-                    <label className="fl">Dosaggio</label>
-                    <input
-                      className="fi fi-health"
-                      value={medication.dosage || ''}
-                      onChange={(e) => updateMemberMedication(medication.id, { dosage: e.target.value })}
-                    />
-                  </div>
-                  <div className="fg">
-                    <label className="fl">Orario / schema</label>
-                    <input
-                      className="fi fi-health"
-                      value={medication.schedule || ''}
-                      onChange={(e) => updateMemberMedication(medication.id, { schedule: e.target.value })}
-                    />
-                  </div>
-                  <div className="fg col-full">
-                    <label className="fl">Indicazione</label>
-                    <input
-                      className="fi fi-health"
-                      value={medication.indication || ''}
-                      onChange={(e) => updateMemberMedication(medication.id, { indication: e.target.value })}
-                    />
-                  </div>
-                  <div className="fg col-full">
-                    <label className="fl">Note</label>
-                    <textarea
-                      className="fi fi-health"
-                      value={medication.notes || ''}
-                      onChange={(e) => updateMemberMedication(medication.id, { notes: e.target.value })}
-                    />
-                  </div>
-                </div>
-                <div className="row">
-                  <button className="btn btn-d btn-sm" onClick={() => deleteMedicationFromMember(selectedMember.id, medication.id)}>
-                    Elimina
-                  </button>
+      {selectedMember ? (
+        <>
+          <section className="card stack-card">
+            <div className="page-header">
+              <div>
+                <div className="card-title">Panoramica componente famiglia</div>
+                <div className="card-subtitle">
+                  Vista breve del profilo sanitario di {memberLabel(selectedMember)}.
                 </div>
               </div>
-            ))
-          )}
-        </div>
-      </section>
+            </div>
 
-      <section className="card">
-        <div className="between">
-          <div>
-            <div className="section-title">Visite specialistiche</div>
-            <p className="page-subtitle">Cronologia visite, documenti clinici e collegamento alle terapie.</p>
-          </div>
-          <button className="btn btn-health" onClick={addVisit}>
-            + Nuova visita
-          </button>
-        </div>
-
-        <div className="timeline-list" style={{ marginTop: 12 }}>
-          {memberVisits.length === 0 ? (
-            <EmptyState text="Nessuna visita specialistica registrata per questo membro." />
-          ) : (
-            memberVisits.map((visit) => {
-              const isOpen = openVisitId === visit.id
-              const relatedTherapies = memberTherapies.filter((therapy) => therapy.visitId === visit.id)
-              const googleUrl =
-                visit.googleCalendarUrl ||
-                buildGoogleCalendarUrl({
-                  title: visit.title,
-                  date: visit.date,
-                  location: visit.location,
-                  details: `${visit.specialty || ''} ${visit.doctor ? `· ${visit.doctor}` : ''}`.trim(),
-                })
-
-              return (
-                <div key={visit.id} className="timeline-item tl-health">
-                  <div className="between">
-                    <div>
-                      <div className="strong">{visit.title || 'Visita specialistica'}</div>
-                      <div className="small muted" style={{ marginTop: 4 }}>
-                        {visit.specialty || 'Specialistica'} · {fmtDate(visit.date)}
-                      </div>
-                    </div>
-                    <div className="row">
-                      <span className="badge badge-health">{relatedTherapies.length} terapie</span>
-                      <button className="btn btn-sm" onClick={() => setOpenVisitId(isOpen ? '' : visit.id)}>
-                        {isOpen ? 'Chiudi' : 'Apri'}
-                      </button>
-                    </div>
-                  </div>
-
-                  {isOpen ? (
-                    <div className="stack-card" style={{ marginTop: 14 }}>
-                      <div className="form-grid">
-                        <div className="fg">
-                          <label className="fl">Titolo visita</label>
-                          <input className="fi fi-health" value={visit.title || ''} onChange={(e) => updateVisit(visit.id, { title: e.target.value })} />
-                        </div>
-                        <div className="fg">
-                          <label className="fl">Specialità</label>
-                          <input className="fi fi-health" value={visit.specialty || ''} onChange={(e) => updateVisit(visit.id, { specialty: e.target.value })} />
-                        </div>
-                        <div className="fg">
-                          <label className="fl">Data</label>
-                          <input className="fi fi-health" type="date" value={visit.date || ''} onChange={(e) => updateVisit(visit.id, { date: e.target.value })} />
-                        </div>
-                        <div className="fg">
-                          <label className="fl">Medico</label>
-                          <input className="fi fi-health" value={visit.doctor || ''} onChange={(e) => updateVisit(visit.id, { doctor: e.target.value })} />
-                        </div>
-                        <div className="fg col-full">
-                          <label className="fl">Luogo</label>
-                          <input className="fi fi-health" value={visit.location || ''} onChange={(e) => updateVisit(visit.id, { location: e.target.value })} />
-                        </div>
-                        <div className="fg col-full">
-                          <label className="fl">Link Google Calendar</label>
-                          <input className="fi fi-health" value={visit.googleCalendarUrl || ''} onChange={(e) => updateVisit(visit.id, { googleCalendarUrl: e.target.value })} placeholder="Incolla link esistente oppure usa il bottone sotto" />
-                        </div>
-                        <div className="fg col-full">
-                          <label className="fl">Note cliniche</label>
-                          <textarea className="fi fi-health" value={visit.notes || ''} onChange={(e) => updateVisit(visit.id, { notes: e.target.value })} />
-                        </div>
-                      </div>
-
-                      <div className="row">
-                        {visit.date ? (
-                          <a className="btn btn-health btn-sm" href={googleUrl} target="_blank" rel="noreferrer">
-                            📅 Apri in Google Calendar
-                          </a>
-                        ) : null}
-                        <button className="btn btn-sm" onClick={() => addTherapy(visit.id)}>
-                          + Aggiungi terapia
-                        </button>
-                        <button className="btn btn-d btn-sm" onClick={() => deleteVisit(visit.id)}>
-                          Elimina visita
-                        </button>
-                      </div>
-
-                      <div className="subsection-box">
-                        <div className="between">
-                          <div>
-                            <div className="section-title">Documenti e link Drive</div>
-                            <p className="page-subtitle">Referti, prescrizioni, PDF o foto archiviati su Drive.</p>
-                          </div>
-                          <button className="btn btn-sm" onClick={() => addVisitDriveLink(visit.id)}>
-                            + Link
-                          </button>
-                        </div>
-
-                        <div className="timeline-list" style={{ marginTop: 12 }}>
-                          {(visit.driveLinks || []).length === 0 ? (
-                            <EmptyState text="Nessun link Drive associato alla visita." />
-                          ) : (
-                            (visit.driveLinks || []).map((link) => (
-                              <div key={link.id} className="subsection-box">
-                                <div className="form-grid">
-                                  <div className="fg">
-                                    <label className="fl">Etichetta</label>
-                                    <input
-                                      className="fi fi-health"
-                                      value={link.label || ''}
-                                      onChange={(e) => updateVisitDriveLink(visit.id, link.id, { label: e.target.value })}
-                                    />
-                                  </div>
-                                  <div className="fg">
-                                    <label className="fl">URL Drive</label>
-                                    <input
-                                      className="fi fi-health"
-                                      value={link.url || ''}
-                                      onChange={(e) => updateVisitDriveLink(visit.id, link.id, { url: e.target.value })}
-                                    />
-                                  </div>
-                                </div>
-                                <div className="row">
-                                  {link.url ? (
-                                    <a className="drive-link" href={link.url} target="_blank" rel="noreferrer">
-                                      🔗 Apri link
-                                    </a>
-                                  ) : null}
-                                  <button className="btn btn-d btn-sm" onClick={() => removeVisitDriveLink(visit.id, link.id)}>
-                                    Rimuovi
-                                  </button>
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="stack-card">
-                        <div className="section-title">Terapie collegate</div>
-                        {relatedTherapies.length === 0 ? (
-                          <EmptyState text="Nessuna terapia collegata a questa visita." />
-                        ) : (
-                          relatedTherapies.map((therapy) => {
-                            const isTherapyOpen = openTherapyId === therapy.id
-                            const relatedMeds = memberTherapyMeds.filter((med) => med.therapyId === therapy.id)
-
-                            return (
-                              <div key={therapy.id} className="subsection-box">
-                                <div className="between">
-                                  <div>
-                                    <div className="strong">{therapy.title || 'Terapia'}</div>
-                                    <div className="small muted" style={{ marginTop: 4 }}>
-                                      {fmtDate(therapy.startDate)} → {fmtDate(therapy.endDate)}
-                                    </div>
-                                  </div>
-                                  <div className="row">
-                                    <span className="badge badge-health">{relatedMeds.length} farmaci</span>
-                                    <button className="btn btn-sm" onClick={() => setOpenTherapyId(isTherapyOpen ? '' : therapy.id)}>
-                                      {isTherapyOpen ? 'Chiudi' : 'Apri'}
-                                    </button>
-                                  </div>
-                                </div>
-
-                                {isTherapyOpen ? (
-                                  <div className="stack-card" style={{ marginTop: 14 }}>
-                                    <div className="form-grid">
-                                      <div className="fg">
-                                        <label className="fl">Titolo terapia</label>
-                                        <input className="fi fi-health" value={therapy.title || ''} onChange={(e) => updateTherapy(therapy.id, { title: e.target.value })} />
-                                      </div>
-                                      <div className="fg">
-                                        <label className="fl">Medico prescrittore</label>
-                                        <input className="fi fi-health" value={therapy.prescribingDoctor || ''} onChange={(e) => updateTherapy(therapy.id, { prescribingDoctor: e.target.value })} />
-                                      </div>
-                                      <div className="fg">
-                                        <label className="fl">Inizio</label>
-                                        <input className="fi fi-health" type="date" value={therapy.startDate || ''} onChange={(e) => updateTherapy(therapy.id, { startDate: e.target.value })} />
-                                      </div>
-                                      <div className="fg">
-                                        <label className="fl">Fine</label>
-                                        <input className="fi fi-health" type="date" value={therapy.endDate || ''} onChange={(e) => updateTherapy(therapy.id, { endDate: e.target.value })} />
-                                      </div>
-                                      <div className="fg col-full">
-                                        <label className="fl">Note terapia</label>
-                                        <textarea className="fi fi-health" value={therapy.notes || ''} onChange={(e) => updateTherapy(therapy.id, { notes: e.target.value })} />
-                                      </div>
-                                    </div>
-
-                                    <div className="subsection-box">
-                                      <div className="between">
-                                        <div>
-                                          <div className="section-title">Allegati terapia</div>
-                                          <p className="page-subtitle">Piani terapeutici, referti, prescrizioni.</p>
-                                        </div>
-                                        <button className="btn btn-sm" onClick={() => addTherapyDriveLink(therapy.id)}>
-                                          + Link
-                                        </button>
-                                      </div>
-
-                                      <div className="timeline-list" style={{ marginTop: 12 }}>
-                                        {(therapy.driveLinks || []).length === 0 ? (
-                                          <EmptyState text="Nessun allegato Drive associato alla terapia." />
-                                        ) : (
-                                          (therapy.driveLinks || []).map((link) => (
-                                            <div key={link.id} className="subsection-box">
-                                              <div className="form-grid">
-                                                <div className="fg">
-                                                  <label className="fl">Etichetta</label>
-                                                  <input
-                                                    className="fi fi-health"
-                                                    value={link.label || ''}
-                                                    onChange={(e) => updateTherapyDriveLink(therapy.id, link.id, { label: e.target.value })}
-                                                  />
-                                                </div>
-                                                <div className="fg">
-                                                  <label className="fl">URL Drive</label>
-                                                  <input
-                                                    className="fi fi-health"
-                                                    value={link.url || ''}
-                                                    onChange={(e) => updateTherapyDriveLink(therapy.id, link.id, { url: e.target.value })}
-                                                  />
-                                                </div>
-                                              </div>
-                                              <div className="row">
-                                                {link.url ? (
-                                                  <a className="drive-link" href={link.url} target="_blank" rel="noreferrer">
-                                                    🔗 Apri link
-                                                  </a>
-                                                ) : null}
-                                                <button className="btn btn-d btn-sm" onClick={() => removeTherapyDriveLink(therapy.id, link.id)}>
-                                                  Rimuovi
-                                                </button>
-                                              </div>
-                                            </div>
-                                          ))
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    <div className="subsection-box">
-                                      <div className="between">
-                                        <div>
-                                          <div className="section-title">Farmaci della terapia</div>
-                                          <p className="page-subtitle">Medicinali con dosaggio, frequenza e orari.</p>
-                                        </div>
-                                        <button className="btn btn-health btn-sm" onClick={() => addTherapyMedication(visit.id, therapy.id)}>
-                                          + Farmaco terapia
-                                        </button>
-                                      </div>
-
-                                      <div className="timeline-list" style={{ marginTop: 12 }}>
-                                        {relatedMeds.length === 0 ? (
-                                          <EmptyState text="Nessun farmaco associato a questa terapia." />
-                                        ) : (
-                                          relatedMeds.map((med) => (
-                                            <div key={med.id} className="subsection-box">
-                                              <div className="form-grid">
-                                                <div className="fg">
-                                                  <label className="fl">Farmaco</label>
-                                                  <input className="fi fi-health" value={med.medication || ''} onChange={(e) => updateTherapyMedication(med.id, { medication: e.target.value })} />
-                                                </div>
-                                                <div className="fg">
-                                                  <label className="fl">Dosaggio</label>
-                                                  <input className="fi fi-health" value={med.dosage || ''} onChange={(e) => updateTherapyMedication(med.id, { dosage: e.target.value })} />
-                                                </div>
-                                                <div className="fg">
-                                                  <label className="fl">Frequenza</label>
-                                                  <input className="fi fi-health" value={med.frequency || ''} onChange={(e) => updateTherapyMedication(med.id, { frequency: e.target.value })} placeholder="es. 2 volte al giorno" />
-                                                </div>
-                                                <div className="fg">
-                                                  <label className="fl">Orari</label>
-                                                  <input className="fi fi-health" value={med.timeSlots || ''} onChange={(e) => updateTherapyMedication(med.id, { timeSlots: e.target.value })} placeholder="08:00, 14:00, 20:00" />
-                                                </div>
-                                                <div className="fg col-full">
-                                                  <label className="fl">Note</label>
-                                                  <textarea className="fi fi-health" value={med.notes || ''} onChange={(e) => updateTherapyMedication(med.id, { notes: e.target.value })} />
-                                                </div>
-                                              </div>
-                                              <div className="row">
-                                                <button className="btn btn-d btn-sm" onClick={() => deleteTherapyMedication(med.id)}>
-                                                  Elimina farmaco
-                                                </button>
-                                              </div>
-                                            </div>
-                                          ))
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    <div className="row">
-                                      <button className="btn btn-d btn-sm" onClick={() => deleteTherapy(therapy.id)}>
-                                        Elimina terapia
-                                      </button>
-                                    </div>
-                                  </div>
-                                ) : null}
-                              </div>
-                            )
-                          })
-                        )}
-                      </div>
-                    </div>
-                  ) : null}
+            <div className="grid-cards responsive-3">
+              <div className="widget-card">
+                <div className="widget-label">Farmaci personali</div>
+                <div className="widget-value">{summary.medications}</div>
+              </div>
+              <div className="widget-card">
+                <div className="widget-label">Visite registrate</div>
+                <div className="widget-value">{summary.visits}</div>
+              </div>
+              <div className="widget-card">
+                <div className="widget-label">Terapie registrate</div>
+                <div className="widget-value">{summary.therapies}</div>
+                <div className="widget-sub">
+                  Prossima visita: {summary.nextVisit ? fmt(summary.nextVisit.date) : '—'}
                 </div>
-              )
-            })
-          )}
-        </div>
-      </section>
+              </div>
+            </div>
+          </section>
+
+          <section className="card stack-card">
+            <div className="page-header">
+              <div>
+                <div className="card-title">Dati sintetici</div>
+                <div className="card-subtitle">
+                  Campi essenziali soltanto, senza scheda lunga dispersiva.
+                </div>
+              </div>
+            </div>
+
+            <div className="form-area">
+              <div className="form-grid">
+                <label className="fg">
+                  <span className="fl">Data di nascita</span>
+                  <input
+                    className="fi"
+                    type="date"
+                    value={selectedMember.birthDate || ''}
+                    onChange={(e) => handleMemberField('birthDate', e.target.value)}
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Gruppo sanguigno</span>
+                  <input
+                    className="fi"
+                    value={selectedMember.bloodGroup || ''}
+                    onChange={(e) => handleMemberField('bloodGroup', e.target.value)}
+                    placeholder="Es. 0+"
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Medico curante</span>
+                  <input
+                    className="fi"
+                    value={selectedMember.doctor || ''}
+                    onChange={(e) => handleMemberField('doctor', e.target.value)}
+                    placeholder="Nome medico"
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Pediatra</span>
+                  <input
+                    className="fi"
+                    value={selectedMember.pediatrician || ''}
+                    onChange={(e) => handleMemberField('pediatrician', e.target.value)}
+                    placeholder="Solo se serve"
+                  />
+                </label>
+
+                <label className="fg responsive-full">
+                  <span className="fl">Allergie</span>
+                  <textarea
+                    className="fi"
+                    value={selectedMember.allergies || ''}
+                    onChange={(e) => handleMemberField('allergies', e.target.value)}
+                    placeholder="Allergie rilevanti"
+                  />
+                </label>
+
+                <label className="fg responsive-full">
+                  <span className="fl">Patologie croniche</span>
+                  <textarea
+                    className="fi"
+                    value={selectedMember.chronicConditions || ''}
+                    onChange={(e) => handleMemberField('chronicConditions', e.target.value)}
+                    placeholder="Condizioni croniche"
+                  />
+                </label>
+
+                <label className="fg responsive-full">
+                  <span className="fl">Note emergenza</span>
+                  <textarea
+                    className="fi"
+                    value={selectedMember.emergencyNotes || ''}
+                    onChange={(e) => handleMemberField('emergencyNotes', e.target.value)}
+                    placeholder="Informazioni importanti"
+                  />
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section className="card stack-card">
+            <div className="page-header">
+              <div>
+                <div className="card-title">Farmaci personali inseriti</div>
+                <div className="card-subtitle">
+                  Dopo l’inserimento vengono mostrati solo in forma tabellare sintetica.
+                </div>
+              </div>
+            </div>
+
+            <div className="data-area">
+              <div className="table-card">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Farmaco</th>
+                      <th>Dosaggio</th>
+                      <th>Frequenza</th>
+                      <th>Indicazione</th>
+                      <th>Note</th>
+                      <th>Azioni</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activePersonalMedications.length ? (
+                      activePersonalMedications.map((med) => (
+                        <tr key={med.id}>
+                          <td>{med.name || '—'}</td>
+                          <td>{med.dosage || '—'}</td>
+                          <td>{med.schedule || '—'}</td>
+                          <td>{med.indication || '—'}</td>
+                          <td>{med.notes || '—'}</td>
+                          <td>
+                            <button
+                              type="button"
+                              className="btn btn-d btn-s"
+                              onClick={() => deleteMedicationFromMember(selectedMember.id, med.id)}
+                            >
+                              Elimina
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="6">
+                          <div className="empty">Nessun farmaco personale inserito.</div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="form-area">
+              <div className="card-title">Nuovo farmaco personale</div>
+              <div className="card-subtitle">
+                Il modulo è separato dai dati già inseriti.
+              </div>
+
+              <form className="form-shell form-grid" onSubmit={handleAddPersonalMedication}>
+                <label className="fg">
+                  <span className="fl">
+                    Farmaco <span className="required">*</span>
+                  </span>
+                  <input
+                    className="fi"
+                    value={personalMedicationForm.name}
+                    onChange={(e) =>
+                      setPersonalMedicationForm((prev) => ({ ...prev, name: e.target.value }))
+                    }
+                    placeholder="Es. Allopurinolo"
+                    required
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Dosaggio</span>
+                  <input
+                    className="fi"
+                    value={personalMedicationForm.dosage}
+                    onChange={(e) =>
+                      setPersonalMedicationForm((prev) => ({ ...prev, dosage: e.target.value }))
+                    }
+                    placeholder="Es. 100 mg"
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Frequenza</span>
+                  <input
+                    className="fi"
+                    value={personalMedicationForm.schedule}
+                    onChange={(e) =>
+                      setPersonalMedicationForm((prev) => ({ ...prev, schedule: e.target.value }))
+                    }
+                    placeholder="Es. Mattina"
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Indicazione</span>
+                  <input
+                    className="fi"
+                    value={personalMedicationForm.indication}
+                    onChange={(e) =>
+                      setPersonalMedicationForm((prev) => ({ ...prev, indication: e.target.value }))
+                    }
+                    placeholder="A cosa serve"
+                  />
+                </label>
+
+                <label className="fg responsive-full">
+                  <span className="fl">Note</span>
+                  <textarea
+                    className="fi"
+                    value={personalMedicationForm.notes}
+                    onChange={(e) =>
+                      setPersonalMedicationForm((prev) => ({ ...prev, notes: e.target.value }))
+                    }
+                    placeholder="Note utili"
+                  />
+                </label>
+
+                <div className="responsive-full actions-row">
+                  <button type="submit" className="btn btn-p">
+                    + Salva farmaco
+                  </button>
+                </div>
+              </form>
+            </div>
+          </section>
+
+          <section className="card stack-card">
+            <div className="page-header">
+              <div>
+                <div className="card-title">Visite specialistiche inserite</div>
+                <div className="card-subtitle">
+                  Tabella dati separata dal modulo di inserimento.
+                </div>
+              </div>
+            </div>
+
+            <div className="data-area">
+              <div className="table-card">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Visita</th>
+                      <th>Specialità</th>
+                      <th>Data</th>
+                      <th>Medico</th>
+                      <th>Luogo</th>
+                      <th>Drive</th>
+                      <th>Calendar</th>
+                      <th>Stato</th>
+                      <th>Azioni</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {memberVisits.length ? (
+                      memberVisits.map((visit) => {
+                        const firstLink = visit.driveLinks?.[0]?.url || ''
+                        const days = daysBetween(visit.date)
+                        return (
+                          <tr key={visit.id}>
+                            <td>{visit.title || '—'}</td>
+                            <td>{visit.specialty || '—'}</td>
+                            <td>{fmt(visit.date)}</td>
+                            <td>{visit.doctor || '—'}</td>
+                            <td>{visit.location || '—'}</td>
+                            <td>
+                              {firstLink ? (
+                                <a
+                                  className="drive-link"
+                                  href={firstLink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  Apri link
+                                </a>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                            <td>
+                              {visit.googleCalendarUrl || visit.date ? (
+                                <a
+                                  className="drive-link"
+                                  href={
+                                    visit.googleCalendarUrl ||
+                                    calendarLink({
+                                      title: visit.title,
+                                      date: visit.date,
+                                      details: visit.notes || visit.specialty,
+                                    })
+                                  }
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  Google Calendar
+                                </a>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                            <td>
+                              <span className={`badge ${statusBadge(days)}`}>
+                                {statusText(days)}
+                              </span>
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                className="btn btn-d btn-s"
+                                onClick={() => handleDeleteVisit(visit.id)}
+                              >
+                                Elimina
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan="9">
+                          <div className="empty">Nessuna visita specialistica inserita.</div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="form-area">
+              <div className="card-title">Nuova visita specialistica</div>
+              <div className="card-subtitle">Aggiungi una visita per {memberLabel(selectedMember)}.</div>
+
+              <form className="form-shell form-grid" onSubmit={handleAddVisit}>
+                <label className="fg">
+                  <span className="fl">
+                    Titolo visita <span className="required">*</span>
+                  </span>
+                  <input
+                    className="fi"
+                    value={visitForm.title}
+                    onChange={(e) => setVisitForm((prev) => ({ ...prev, title: e.target.value }))}
+                    placeholder="Es. Controllo cardiologico"
+                    required
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Specialità</span>
+                  <input
+                    className="fi"
+                    value={visitForm.specialty}
+                    onChange={(e) =>
+                      setVisitForm((prev) => ({ ...prev, specialty: e.target.value }))
+                    }
+                    placeholder="Es. Cardiologia"
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Data visita</span>
+                  <input
+                    className="fi"
+                    type="date"
+                    value={visitForm.date}
+                    onChange={(e) => setVisitForm((prev) => ({ ...prev, date: e.target.value }))}
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Medico</span>
+                  <input
+                    className="fi"
+                    value={visitForm.doctor}
+                    onChange={(e) => setVisitForm((prev) => ({ ...prev, doctor: e.target.value }))}
+                    placeholder="Nome medico"
+                  />
+                </label>
+
+                <label className="fg responsive-full">
+                  <span className="fl">Luogo</span>
+                  <input
+                    className="fi"
+                    value={visitForm.location}
+                    onChange={(e) =>
+                      setVisitForm((prev) => ({ ...prev, location: e.target.value }))
+                    }
+                    placeholder="Clinica, studio, ospedale"
+                  />
+                </label>
+
+                <label className="fg responsive-full">
+                  <span className="fl">Link Google Calendar</span>
+                  <input
+                    className="fi"
+                    value={visitForm.googleCalendarUrl}
+                    onChange={(e) =>
+                      setVisitForm((prev) => ({ ...prev, googleCalendarUrl: e.target.value }))
+                    }
+                    placeholder="https://calendar.google.com/..."
+                  />
+                </label>
+
+                <label className="fg responsive-full">
+                  <span className="fl">Link Drive / PDF referto</span>
+                  <input
+                    className="fi"
+                    value={visitForm.driveUrl}
+                    onChange={(e) =>
+                      setVisitForm((prev) => ({ ...prev, driveUrl: e.target.value }))
+                    }
+                    placeholder="https://drive.google.com/..."
+                  />
+                </label>
+
+                <label className="fg responsive-full">
+                  <span className="fl">Note</span>
+                  <textarea
+                    className="fi"
+                    value={visitForm.notes}
+                    onChange={(e) => setVisitForm((prev) => ({ ...prev, notes: e.target.value }))}
+                    placeholder="Note sintetiche"
+                  />
+                </label>
+
+                <div className="responsive-full actions-row">
+                  <button type="submit" className="btn btn-p">
+                    + Salva visita
+                  </button>
+                </div>
+              </form>
+            </div>
+          </section>
+
+          <section className="card stack-card">
+            <div className="page-header">
+              <div>
+                <div className="card-title">Terapie inserite</div>
+                <div className="card-subtitle">
+                  Ogni terapia è collegata a una visita specialistica.
+                </div>
+              </div>
+            </div>
+
+            <div className="data-area">
+              <div className="table-card">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Terapia</th>
+                      <th>Visita collegata</th>
+                      <th>Inizio</th>
+                      <th>Fine</th>
+                      <th>Medico</th>
+                      <th>Drive</th>
+                      <th>Azioni</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {memberTherapies.length ? (
+                      memberTherapies.map((therapy) => {
+                        const firstLink = therapy.driveLinks?.[0]?.url || ''
+                        return (
+                          <tr key={therapy.id}>
+                            <td>{therapy.title || '—'}</td>
+                            <td>{visitMap[therapy.visitId]?.title || '—'}</td>
+                            <td>{fmt(therapy.startDate)}</td>
+                            <td>{fmt(therapy.endDate)}</td>
+                            <td>{therapy.prescribingDoctor || '—'}</td>
+                            <td>
+                              {firstLink ? (
+                                <a
+                                  className="drive-link"
+                                  href={firstLink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  Apri link
+                                </a>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                className="btn btn-d btn-s"
+                                onClick={() => handleDeleteTherapy(therapy.id)}
+                              >
+                                Elimina
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan="7">
+                          <div className="empty">Nessuna terapia inserita.</div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="form-area">
+              <div className="card-title">Nuova terapia</div>
+              <div className="card-subtitle">
+                Il form è separato dalla tabella delle terapie già presenti.
+              </div>
+
+              <form className="form-shell form-grid" onSubmit={handleAddTherapy}>
+                <label className="fg">
+                  <span className="fl">Visita collegata</span>
+                  <select
+                    className="fi"
+                    value={therapyForm.visitId}
+                    onChange={(e) =>
+                      setTherapyForm((prev) => ({ ...prev, visitId: e.target.value }))
+                    }
+                  >
+                    <option value="">Seleziona visita</option>
+                    {memberVisits.map((visit) => (
+                      <option key={visit.id} value={visit.id}>
+                        {visit.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="fg">
+                  <span className="fl">
+                    Titolo terapia <span className="required">*</span>
+                  </span>
+                  <input
+                    className="fi"
+                    value={therapyForm.title}
+                    onChange={(e) =>
+                      setTherapyForm((prev) => ({ ...prev, title: e.target.value }))
+                    }
+                    placeholder="Es. Terapia post visita"
+                    required
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Data inizio</span>
+                  <input
+                    className="fi"
+                    type="date"
+                    value={therapyForm.startDate}
+                    onChange={(e) =>
+                      setTherapyForm((prev) => ({ ...prev, startDate: e.target.value }))
+                    }
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Data fine</span>
+                  <input
+                    className="fi"
+                    type="date"
+                    value={therapyForm.endDate}
+                    onChange={(e) =>
+                      setTherapyForm((prev) => ({ ...prev, endDate: e.target.value }))
+                    }
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Medico prescrittore</span>
+                  <input
+                    className="fi"
+                    value={therapyForm.prescribingDoctor}
+                    onChange={(e) =>
+                      setTherapyForm((prev) => ({
+                        ...prev,
+                        prescribingDoctor: e.target.value,
+                      }))
+                    }
+                    placeholder="Nome medico"
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Link Drive</span>
+                  <input
+                    className="fi"
+                    value={therapyForm.driveUrl}
+                    onChange={(e) =>
+                      setTherapyForm((prev) => ({ ...prev, driveUrl: e.target.value }))
+                    }
+                    placeholder="https://drive.google.com/..."
+                  />
+                </label>
+
+                <label className="fg responsive-full">
+                  <span className="fl">Note</span>
+                  <textarea
+                    className="fi"
+                    value={therapyForm.notes}
+                    onChange={(e) =>
+                      setTherapyForm((prev) => ({ ...prev, notes: e.target.value }))
+                    }
+                    placeholder="Note terapia"
+                  />
+                </label>
+
+                <div className="responsive-full actions-row">
+                  <button type="submit" className="btn btn-p">
+                    + Salva terapia
+                  </button>
+                </div>
+              </form>
+            </div>
+          </section>
+
+          <section className="card stack-card">
+            <div className="page-header">
+              <div>
+                <div className="card-title">Farmaci legati alle terapie</div>
+                <div className="card-subtitle">
+                  Vista tabellare breve dei farmaci assegnati alle terapie.
+                </div>
+              </div>
+            </div>
+
+            <div className="data-area">
+              <div className="table-card">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Farmaco</th>
+                      <th>Terapia</th>
+                      <th>Visita</th>
+                      <th>Dosaggio</th>
+                      <th>Frequenza</th>
+                      <th>Orari</th>
+                      <th>Note</th>
+                      <th>Azioni</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {memberTherapyMedications.length ? (
+                      memberTherapyMedications.map((row) => (
+                        <tr key={row.id}>
+                          <td>{row.medication || '—'}</td>
+                          <td>{therapyMap[row.therapyId]?.title || '—'}</td>
+                          <td>{visitMap[row.visitId]?.title || '—'}</td>
+                          <td>{row.dosage || '—'}</td>
+                          <td>{row.frequency || '—'}</td>
+                          <td>{row.timeSlots || '—'}</td>
+                          <td>{row.notes || '—'}</td>
+                          <td>
+                            <button
+                              type="button"
+                              className="btn btn-d btn-s"
+                              onClick={() => handleDeleteTherapyMedication(row.id)}
+                            >
+                              Elimina
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="8">
+                          <div className="empty">Nessun farmaco terapia inserito.</div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="form-area">
+              <div className="card-title">Nuovo farmaco per terapia</div>
+              <div className="card-subtitle">Compilazione separata dalla tabella dati.</div>
+
+              <form className="form-shell form-grid" onSubmit={handleAddTherapyMedication}>
+                <label className="fg">
+                  <span className="fl">Terapia</span>
+                  <select
+                    className="fi"
+                    value={therapyMedicationForm.therapyId}
+                    onChange={(e) =>
+                      setTherapyMedicationForm((prev) => ({
+                        ...prev,
+                        therapyId: e.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">Seleziona terapia</option>
+                    {memberTherapies.map((therapy) => (
+                      <option key={therapy.id} value={therapy.id}>
+                        {therapy.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="fg">
+                  <span className="fl">
+                    Farmaco <span className="required">*</span>
+                  </span>
+                  <input
+                    className="fi"
+                    value={therapyMedicationForm.medication}
+                    onChange={(e) =>
+                      setTherapyMedicationForm((prev) => ({
+                        ...prev,
+                        medication: e.target.value,
+                      }))
+                    }
+                    placeholder="Nome farmaco"
+                    required
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Dosaggio</span>
+                  <input
+                    className="fi"
+                    value={therapyMedicationForm.dosage}
+                    onChange={(e) =>
+                      setTherapyMedicationForm((prev) => ({
+                        ...prev,
+                        dosage: e.target.value,
+                      }))
+                    }
+                    placeholder="Es. 1 compressa"
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Frequenza</span>
+                  <input
+                    className="fi"
+                    value={therapyMedicationForm.frequency}
+                    onChange={(e) =>
+                      setTherapyMedicationForm((prev) => ({
+                        ...prev,
+                        frequency: e.target.value,
+                      }))
+                    }
+                    placeholder="Es. 2 volte al giorno"
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Orari</span>
+                  <input
+                    className="fi"
+                    value={therapyMedicationForm.timeSlots}
+                    onChange={(e) =>
+                      setTherapyMedicationForm((prev) => ({
+                        ...prev,
+                        timeSlots: e.target.value,
+                      }))
+                    }
+                    placeholder="Es. 08:00, 20:00"
+                  />
+                </label>
+
+                <label className="fg responsive-full">
+                  <span className="fl">Note</span>
+                  <textarea
+                    className="fi"
+                    value={therapyMedicationForm.notes}
+                    onChange={(e) =>
+                      setTherapyMedicationForm((prev) => ({
+                        ...prev,
+                        notes: e.target.value,
+                      }))
+                    }
+                    placeholder="Note farmaco"
+                  />
+                </label>
+
+                <div className="responsive-full actions-row">
+                  <button type="submit" className="btn btn-p">
+                    + Salva farmaco terapia
+                  </button>
+                </div>
+              </form>
+            </div>
+          </section>
+        </>
+      ) : (
+        <section className="card">
+          <div className="empty">Nessun componente famiglia disponibile.</div>
+        </section>
+      )}
     </div>
   )
 }

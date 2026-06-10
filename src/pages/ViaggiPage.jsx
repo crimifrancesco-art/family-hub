@@ -1,40 +1,31 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AIRLINE_DIRECTORY, TRIP_STATUS_OPTIONS, useAppContext } from '../context/AppContext'
 
-const uid = (prefix = 'id') =>
-  `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
-
-function fmtDate(value) {
-  if (!value) return '—'
-  const parts = String(value).split('-')
-  if (parts.length !== 3) return value
+function fmt(iso) {
+  if (!iso) return '—'
+  const parts = String(iso).split('-')
+  if (parts.length < 3) return iso
   return `${parts[2]}/${parts[1]}/${parts[0]}`
 }
 
-function diffDays(value) {
-  if (!value) return null
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const target = new Date(value)
-  if (Number.isNaN(target.getTime())) return null
-  const normalized = new Date(target.getFullYear(), target.getMonth(), target.getDate())
-  return Math.ceil((normalized.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+function labelStatus(value) {
+  return TRIP_STATUS_OPTIONS.find((item) => item.value === value)?.label || value || '—'
 }
 
-function tripStatusLabel(status) {
-  return TRIP_STATUS_OPTIONS.find((item) => item.value === status)?.label || status || '—'
-}
-
-function tripStatusBadge(status) {
-  if (status === 'incoming' || status === 'ongoing') return 'badge-travel'
-  if (status === 'planning') return 'badge-warning'
+function badgeClass(status) {
+  if (status === 'incoming' || status === 'ongoing') return 'badge-success'
   if (status === 'cancelled') return 'badge-danger'
+  if (status === 'planning') return 'badge-warning'
   return 'badge-muted'
 }
 
 function mapsLink(address, lat, lng) {
-  if (lat && lng) return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`
-  return address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}` : ''
+  if (lat && lng) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`
+  }
+  return address
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+    : ''
 }
 
 function directionsLink(address, lat, lng) {
@@ -47,38 +38,35 @@ function googleCalendarLink({ title, startDate, endDate, details = '', location 
   if (!startDate) return ''
   const start = `${startDate.replaceAll('-', '')}T090000`
   const end = `${(endDate || startDate).replaceAll('-', '')}T100000`
-  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${start}/${end}&details=${encodeURIComponent(details)}&location=${encodeURIComponent(location)}`
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
+    title || 'Promemoria viaggio',
+  )}&dates=${start}/${end}&details=${encodeURIComponent(details)}&location=${encodeURIComponent(
+    location,
+  )}`
 }
 
-function youtubeThumb(url) {
-  const match = url?.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/)
-  return match ? `https://img.youtube.com/vi/${match[1]}/hqdefault.jpg` : ''
+function daysUntil(date, base = new Date()) {
+  if (!date) return null
+  const target = new Date(date)
+  const now = new Date(base)
+  if (Number.isNaN(target.getTime()) || Number.isNaN(now.getTime())) return null
+  return Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
 }
 
-function guessMediaThumb(type, url, thumb) {
-  if (thumb) return thumb
-  if (type === 'youtube') return youtubeThumb(url)
-  return ''
+function daysText(days) {
+  if (days === null) return 'Senza data'
+  if (days < 0) return 'Passato'
+  if (days === 0) return 'Oggi'
+  if (days === 1) return 'Domani'
+  return `${days} gg`
 }
 
-function EmptyState({ text }) {
-  return <div className="empty">{text}</div>
-}
-
-function TravelMetric({ icon, label, value, sub }) {
-  return (
-    <div className="widget-card wc-travel" style={{ cursor: 'default' }}>
-      <div className="widget-icon">{icon}</div>
-      <div className="widget-label">{label}</div>
-      <div className="widget-value">{value}</div>
-      <div className="widget-sub">{sub}</div>
-    </div>
-  )
-}
-
-function tripCover(name) {
-  const seed = encodeURIComponent(name || 'family travel')
-  return `https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80&${seed}`
+function tripParticipantLabels(trip, familyMembers) {
+  return (trip?.persons || [])
+    .map((memberId) => familyMembers.find((member) => member.id === memberId))
+    .filter(Boolean)
+    .map((member) => member.name || member.role || member.initials)
+    .join(', ')
 }
 
 export default function ViaggiPage() {
@@ -92,53 +80,82 @@ export default function ViaggiPage() {
     deleteTrip,
     toggleTripMember,
     addFlight,
-    updateFlight,
     deleteFlight,
-    invertFlightRoute,
+    addHotel,
+    deleteHotel,
   } = useAppContext()
 
-  const members = familyMembers || []
-  const tripList = trips || []
-
-  const [selectedTripId, setSelectedTripId] = useState(tripList[0]?.id || '')
-  const [activeTab, setActiveTab] = useState('overview')
+  const [selectedTripId, setSelectedTripId] = useState('')
+  const [tripForm, setTripForm] = useState({
+    name: '',
+    status: 'planning',
+    dateFrom: '',
+    dateTo: '',
+  })
+  const [flightForm, setFlightForm] = useState({
+    company: '',
+    from: '',
+    to: '',
+    date: '',
+    departureTime: '',
+    arrivalTime: '',
+    flightNumber: '',
+    bookingRef: '',
+    purchaseCost: '',
+  })
+  const [hotelForm, setHotelForm] = useState({
+    name: '',
+    phone: '',
+    address: '',
+    lat: '',
+    lng: '',
+    bookingUrl: '',
+    alternateUrl: '',
+    checkIn: '',
+    checkOut: '',
+    paidAmount: '',
+    dueAmount: '',
+    paymentMethod: '',
+    cancellationDate: '',
+  })
 
   useEffect(() => {
-    if (!tripList.length) {
-      setSelectedTripId('')
+    if (!selectedTripId && trips?.length) {
+      setSelectedTripId(trips[0].id)
       return
     }
-    if (!tripList.some((trip) => trip.id === selectedTripId)) {
-      setSelectedTripId(tripList[0].id)
+    if (selectedTripId && !trips.some((trip) => trip.id === selectedTripId)) {
+      setSelectedTripId(trips[0]?.id || '')
     }
-  }, [selectedTripId, tripList])
+  }, [trips, selectedTripId])
 
   const selectedTrip = useMemo(
-    () => tripList.find((trip) => trip.id === selectedTripId) || tripList[0] || null,
-    [selectedTripId, tripList],
+    () => trips.find((trip) => trip.id === selectedTripId) || null,
+    [trips, selectedTripId],
   )
 
-  const travelSummary = useMemo(() => {
-    const activeTrips = tripList.filter((trip) => trip.status === 'incoming' || trip.status === 'ongoing')
-    const deadlines = tripList.reduce((acc, trip) => acc + (trip.generalDeadlines || []).length, 0)
-    const flights = tripList.reduce((acc, trip) => acc + (trip.flights || []).length, 0)
-    const hotels = tripList.reduce((acc, trip) => acc + (trip.hotels || []).length, 0)
+  const tripsRows = useMemo(
+    () =>
+      [...(trips || [])].sort((a, b) => {
+        const av = a.dateFrom || '9999-99-99'
+        const bv = b.dateFrom || '9999-99-99'
+        return av.localeCompare(bv)
+      }),
+    [trips],
+  )
 
-    return {
-      totalTrips: tripList.length,
-      activeTrips: activeTrips.length,
-      deadlines,
-      flights,
-      hotels,
-    }
-  }, [tripList])
+  const selectedTripFlights = selectedTrip?.flights || []
+  const selectedTripHotels = selectedTrip?.hotels || []
 
-  function createTrip() {
+  const handleAddTrip = (event) => {
+    event.preventDefault()
+    if (!tripForm.name.trim()) return
+
     addTrip({
-      name: 'Nuovo viaggio',
-      status: 'planning',
-      dateFrom: '',
-      dateTo: '',
+      name: tripForm.name.trim(),
+      status: tripForm.status,
+      dateFrom: tripForm.dateFrom,
+      dateTo: tripForm.dateTo,
       persons: [],
       flights: [],
       hotels: [],
@@ -147,265 +164,91 @@ export default function ViaggiPage() {
       travelDiary: { days: [], places: [], mediaLinks: [], notes: '' },
       generalDeadlines: [],
     })
-  }
 
-  function updateSelectedTrip(patch) {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, patch)
-  }
-
-  function addHotel() {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      hotels: [
-        ...(selectedTrip.hotels || []),
-        {
-          id: uid('hotel'),
-          name: '',
-          phone: '',
-          address: '',
-          lat: '',
-          lng: '',
-          bookingUrl: '',
-          alternateUrl: '',
-          checkIn: '',
-          checkOut: '',
-          paidAmount: '',
-          dueAmount: '',
-          paymentMethod: '',
-          cancellationDate: '',
-          deadlines: [],
-        },
-      ],
+    setTripForm({
+      name: '',
+      status: 'planning',
+      dateFrom: '',
+      dateTo: '',
     })
   }
 
-  function updateHotel(hotelId, patch) {
+  const handleDeleteTrip = (tripId) => {
+    deleteTrip(tripId)
+  }
+
+  const handleTripField = (field, value) => {
     if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      hotels: (selectedTrip.hotels || []).map((hotel) =>
-        hotel.id === hotelId ? { ...hotel, ...patch } : hotel,
-      ),
+    updateTrip(selectedTrip.id, { [field]: value })
+  }
+
+  const handleAddFlight = (event) => {
+    event.preventDefault()
+    if (!selectedTrip || !flightForm.company.trim()) return
+
+    addFlight(selectedTrip.id, {
+      company: flightForm.company.trim(),
+      companyUrl: AIRLINE_DIRECTORY[flightForm.company.trim()] || '',
+      from: flightForm.from.trim(),
+      to: flightForm.to.trim(),
+      date: flightForm.date,
+      departureTime: flightForm.departureTime,
+      arrivalTime: flightForm.arrivalTime,
+      flightNumber: flightForm.flightNumber.trim(),
+      bookingRef: flightForm.bookingRef.trim(),
+      purchaseCost: flightForm.purchaseCost.trim(),
+      baggage: [],
+      deadlines: [],
+    })
+
+    setFlightForm({
+      company: '',
+      from: '',
+      to: '',
+      date: '',
+      departureTime: '',
+      arrivalTime: '',
+      flightNumber: '',
+      bookingRef: '',
+      purchaseCost: '',
     })
   }
 
-  function deleteHotel(hotelId) {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      hotels: (selectedTrip.hotels || []).filter((hotel) => hotel.id !== hotelId),
-    })
-  }
+  const handleAddHotel = (event) => {
+    event.preventDefault()
+    if (!selectedTrip || !hotelForm.name.trim()) return
 
-  function addDeadline() {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      generalDeadlines: [
-        ...(selectedTrip.generalDeadlines || []),
-        {
-          id: uid('ddl'),
-          title: 'Nuova scadenza',
-          date: '',
-          note: '',
-          url: '',
-        },
-      ],
+    addHotel(selectedTrip.id, {
+      name: hotelForm.name.trim(),
+      phone: hotelForm.phone.trim(),
+      address: hotelForm.address.trim(),
+      lat: hotelForm.lat.trim(),
+      lng: hotelForm.lng.trim(),
+      bookingUrl: hotelForm.bookingUrl.trim(),
+      alternateUrl: hotelForm.alternateUrl.trim(),
+      checkIn: hotelForm.checkIn,
+      checkOut: hotelForm.checkOut,
+      paidAmount: hotelForm.paidAmount.trim(),
+      dueAmount: hotelForm.dueAmount.trim(),
+      paymentMethod: hotelForm.paymentMethod.trim(),
+      cancellationDate: hotelForm.cancellationDate,
+      deadlines: [],
     })
-  }
 
-  function updateDeadline(deadlineId, patch) {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      generalDeadlines: (selectedTrip.generalDeadlines || []).map((row) =>
-        row.id === deadlineId ? { ...row, ...patch } : row,
-      ),
-    })
-  }
-
-  function deleteDeadline(deadlineId) {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      generalDeadlines: (selectedTrip.generalDeadlines || []).filter((row) => row.id !== deadlineId),
-    })
-  }
-
-  function addChecklistGroup() {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      packingChecklist: [
-        ...(selectedTrip.packingChecklist || []),
-        { id: uid('grp'), category: 'Nuova categoria', color: 'blue', items: [] },
-      ],
-    })
-  }
-
-  function updateChecklistGroup(groupId, patch) {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      packingChecklist: (selectedTrip.packingChecklist || []).map((group) =>
-        group.id === groupId ? { ...group, ...patch } : group,
-      ),
-    })
-  }
-
-  function deleteChecklistGroup(groupId) {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      packingChecklist: (selectedTrip.packingChecklist || []).filter((group) => group.id !== groupId),
-    })
-  }
-
-  function addChecklistItem(groupId) {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      packingChecklist: (selectedTrip.packingChecklist || []).map((group) =>
-        group.id === groupId
-          ? {
-              ...group,
-              items: [...(group.items || []), { id: uid('chk'), label: 'Nuovo elemento', done: false }],
-            }
-          : group,
-      ),
-    })
-  }
-
-  function updateChecklistItem(groupId, itemId, patch) {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      packingChecklist: (selectedTrip.packingChecklist || []).map((group) =>
-        group.id === groupId
-          ? {
-              ...group,
-              items: (group.items || []).map((item) =>
-                item.id === itemId ? { ...item, ...patch } : item,
-              ),
-            }
-          : group,
-      ),
-    })
-  }
-
-  function deleteChecklistItem(groupId, itemId) {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      packingChecklist: (selectedTrip.packingChecklist || []).map((group) =>
-        group.id === groupId
-          ? {
-              ...group,
-              items: (group.items || []).filter((item) => item.id !== itemId),
-            }
-          : group,
-      ),
-    })
-  }
-
-  function addDiaryDay() {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      travelDiary: {
-        ...(selectedTrip.travelDiary || {}),
-        days: [
-          ...((selectedTrip.travelDiary && selectedTrip.travelDiary.days) || []),
-          { id: uid('day'), date: '', title: 'Nuova giornata', notes: '' },
-        ],
-      },
-    })
-  }
-
-  function updateDiaryDay(dayId, patch) {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      travelDiary: {
-        ...(selectedTrip.travelDiary || {}),
-        days: ((selectedTrip.travelDiary && selectedTrip.travelDiary.days) || []).map((day) =>
-          day.id === dayId ? { ...day, ...patch } : day,
-        ),
-      },
-    })
-  }
-
-  function deleteDiaryDay(dayId) {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      travelDiary: {
-        ...(selectedTrip.travelDiary || {}),
-        days: ((selectedTrip.travelDiary && selectedTrip.travelDiary.days) || []).filter(
-          (day) => day.id !== dayId,
-        ),
-      },
-    })
-  }
-
-  function addDiaryPlace() {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      travelDiary: {
-        ...(selectedTrip.travelDiary || {}),
-        places: [
-          ...((selectedTrip.travelDiary && selectedTrip.travelDiary.places) || []),
-          { id: uid('place'), name: '', note: '', address: '', lat: '', lng: '' },
-        ],
-      },
-    })
-  }
-
-  function updateDiaryPlace(placeId, patch) {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      travelDiary: {
-        ...(selectedTrip.travelDiary || {}),
-        places: ((selectedTrip.travelDiary && selectedTrip.travelDiary.places) || []).map((place) =>
-          place.id === placeId ? { ...place, ...patch } : place,
-        ),
-      },
-    })
-  }
-
-  function deleteDiaryPlace(placeId) {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      travelDiary: {
-        ...(selectedTrip.travelDiary || {}),
-        places: ((selectedTrip.travelDiary && selectedTrip.travelDiary.places) || []).filter(
-          (place) => place.id !== placeId,
-        ),
-      },
-    })
-  }
-
-  function addMediaLink() {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      travelDiary: {
-        ...(selectedTrip.travelDiary || {}),
-        mediaLinks: [
-          ...((selectedTrip.travelDiary && selectedTrip.travelDiary.mediaLinks) || []),
-          { id: uid('media'), type: 'link', title: '', url: '', thumb: '', note: '' },
-        ],
-      },
-    })
-  }
-
-  function updateMediaLink(mediaId, patch) {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      travelDiary: {
-        ...(selectedTrip.travelDiary || {}),
-        mediaLinks: ((selectedTrip.travelDiary && selectedTrip.travelDiary.mediaLinks) || []).map((item) =>
-          item.id === mediaId ? { ...item, ...patch } : item,
-        ),
-      },
-    })
-  }
-
-  function deleteMediaLink(mediaId) {
-    if (!selectedTrip) return
-    updateTrip(selectedTrip.id, {
-      travelDiary: {
-        ...(selectedTrip.travelDiary || {}),
-        mediaLinks: ((selectedTrip.travelDiary && selectedTrip.travelDiary.mediaLinks) || []).filter(
-          (item) => item.id !== mediaId,
-        ),
-      },
+    setHotelForm({
+      name: '',
+      phone: '',
+      address: '',
+      lat: '',
+      lng: '',
+      bookingUrl: '',
+      alternateUrl: '',
+      checkIn: '',
+      checkOut: '',
+      paidAmount: '',
+      dueAmount: '',
+      paymentMethod: '',
+      cancellationDate: '',
     })
   }
 
@@ -413,9 +256,9 @@ export default function ViaggiPage() {
     return (
       <div className="page-stack">
         <section className="hero-card">
-          <div className="eyebrow">Viaggi famiglia</div>
-          <h1 className="page-title">Sto caricando i viaggi</h1>
-          <p className="page-subtitle">Voli, hotel, checklist, diario e reminder.</p>
+          <div className="eyebrow">Viaggi</div>
+          <h1>Caricamento viaggi…</h1>
+          <p className="page-subtitle">Sto caricando partenze, voli, hotel e partecipanti.</p>
         </section>
       </div>
     )
@@ -424,147 +267,226 @@ export default function ViaggiPage() {
   return (
     <div className="page-stack">
       <section className="hero-card">
-        <div className="eyebrow">Viaggi famiglia</div>
-        <div className="page-header">
-          <div>
-            <h1 className="page-title">Viaggi & Organizzazione</h1>
-            <p className="page-subtitle">
-              Gestisci destinazioni, prenotazioni, checklist, tappe e promemoria di tutta la famiglia.
-            </p>
-          </div>
-          <div className="row">
-            <span className="badge badge-travel">{travelSummary.totalTrips} viaggi</span>
-            <span className="badge badge-dash">{travelSummary.flights} voli</span>
-            <span className="badge badge-warning">{travelSummary.deadlines} scadenze</span>
-          </div>
-        </div>
+        <div className="eyebrow">Viaggi</div>
+        <h1>Viaggi in formato semplice</h1>
+        <p className="page-subtitle">
+          Niente overview dispersiva: dati già inseriti in tabella, moduli separati qui sotto.
+        </p>
         {syncError ? <div className="app-status">{syncError}</div> : null}
       </section>
 
-      <section>
-        <div className="section-title">Panoramica viaggi</div>
-        <div className="grid-2 widget-grid">
-          <TravelMetric icon="✈️" label="Viaggi" value={travelSummary.totalTrips} sub={`${travelSummary.activeTrips} attivi o imminenti`} />
-          <TravelMetric icon="🛫" label="Voli" value={travelSummary.flights} sub="Tratte registrate in app" />
-          <TravelMetric icon="🏨" label="Hotel" value={travelSummary.hotels} sub="Prenotazioni e soggiorni" />
-          <TravelMetric icon="⏰" label="Reminder" value={travelSummary.deadlines} sub="Check-in, booking, scadenze" />
-        </div>
-      </section>
-
-      <section className="card">
-        <div className="between">
+      <section className="card stack-card">
+        <div className="page-header">
           <div>
-            <div className="section-title">I tuoi viaggi</div>
-            <p className="page-subtitle">Ogni viaggio è una scheda completa con logistica e diario.</p>
+            <div className="card-title">Viaggi inseriti</div>
+            <div className="card-subtitle">
+              Tabella sintetica dei viaggi già presenti, con selezione del viaggio attivo.
+            </div>
           </div>
-          <button className="btn btn-travel" onClick={createTrip}>
-            + Nuovo viaggio
-          </button>
         </div>
 
-        <div className="timeline-list" style={{ marginTop: 12 }}>
-          {tripList.length === 0 ? (
-            <EmptyState text="Nessun viaggio presente." />
-          ) : (
-            tripList.map((trip) => {
-              const isSelected = selectedTrip?.id === trip.id
-              const days = diffDays(trip.dateFrom)
-
-              return (
-                <button
-                  key={trip.id}
-                  type="button"
-                  className="subsection-box"
-                  onClick={() => setSelectedTripId(trip.id)}
-                  style={{
-                    textAlign: 'left',
-                    borderColor: isSelected ? 'rgba(52,211,153,0.35)' : undefined,
-                    background: isSelected ? 'rgba(52,211,153,0.08)' : undefined,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <div className="between">
-                    <div>
-                      <div className="strong">{trip.name || 'Viaggio'}</div>
-                      <div className="small muted" style={{ marginTop: 4 }}>
-                        {trip.dateFrom ? `${fmtDate(trip.dateFrom)} → ${fmtDate(trip.dateTo)}` : 'Date non definite'}
-                      </div>
-                    </div>
-                    <div className="row">
-                      <span className={`badge ${tripStatusBadge(trip.status)}`}>{tripStatusLabel(trip.status)}</span>
-                      <span className="badge badge-muted">
-                        {days === null ? '—' : days < 0 ? 'iniziato' : days === 0 ? 'oggi' : `${days} gg`}
-                      </span>
-                    </div>
-                  </div>
-                </button>
-              )
-            })
-          )}
+        <div className="data-area">
+          <div className="table-card">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Seleziona</th>
+                  <th>Viaggio</th>
+                  <th>Periodo</th>
+                  <th>Stato</th>
+                  <th>Partecipanti</th>
+                  <th>Partenza</th>
+                  <th>Azioni</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tripsRows.length ? (
+                  tripsRows.map((trip) => {
+                    const days = daysUntil(trip.dateFrom)
+                    return (
+                      <tr key={trip.id}>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn btn-s"
+                            onClick={() => setSelectedTripId(trip.id)}
+                          >
+                            {selectedTripId === trip.id ? 'Attivo' : 'Apri'}
+                          </button>
+                        </td>
+                        <td>{trip.name || '—'}</td>
+                        <td>
+                          {fmt(trip.dateFrom)} → {fmt(trip.dateTo)}
+                        </td>
+                        <td>
+                          <span className={`badge ${badgeClass(trip.status)}`}>
+                            {labelStatus(trip.status)}
+                          </span>
+                        </td>
+                        <td>{tripParticipantLabels(trip, familyMembers) || '—'}</td>
+                        <td>{daysText(days)}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn btn-d btn-s"
+                            onClick={() => handleDeleteTrip(trip.id)}
+                          >
+                            Elimina
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan="7">
+                      <div className="empty">Nessun viaggio inserito.</div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
-      {!selectedTrip ? null : (
+      <section className="card stack-card">
+        <div className="card-title">Nuovo viaggio</div>
+        <div className="card-subtitle">
+          Il modulo è separato dalla tabella dei viaggi già presenti.
+        </div>
+
+        <div className="form-area">
+          <form className="form-shell form-grid" onSubmit={handleAddTrip}>
+            <label className="fg">
+              <span className="fl">
+                Nome viaggio <span className="required">*</span>
+              </span>
+              <input
+                className="fi fi-travel"
+                value={tripForm.name}
+                onChange={(e) => setTripForm((prev) => ({ ...prev, name: e.target.value }))}
+                placeholder="Es. Atene estate"
+                required
+              />
+            </label>
+
+            <label className="fg">
+              <span className="fl">Stato</span>
+              <select
+                className="fi fi-travel"
+                value={tripForm.status}
+                onChange={(e) => setTripForm((prev) => ({ ...prev, status: e.target.value }))}
+              >
+                {TRIP_STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="fg">
+              <span className="fl">Data partenza</span>
+              <input
+                className="fi fi-travel"
+                type="date"
+                value={tripForm.dateFrom}
+                onChange={(e) => setTripForm((prev) => ({ ...prev, dateFrom: e.target.value }))}
+              />
+            </label>
+
+            <label className="fg">
+              <span className="fl">Data ritorno</span>
+              <input
+                className="fi fi-travel"
+                type="date"
+                value={tripForm.dateTo}
+                onChange={(e) => setTripForm((prev) => ({ ...prev, dateTo: e.target.value }))}
+              />
+            </label>
+
+            <div className="responsive-full actions-row">
+              <button type="submit" className="btn btn-travel">
+                + Salva viaggio
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      {selectedTrip ? (
         <>
-          <section
-            className="card"
-            style={{
-              overflow: 'hidden',
-              padding: 0,
-            }}
-          >
-            <div
-              style={{
-                minHeight: 220,
-                padding: 20,
-                backgroundImage: `linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.62)), url(${tripCover(selectedTrip.name)})`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'flex-end',
-              }}
-            >
-              <div className="row">
-                <span className={`badge ${tripStatusBadge(selectedTrip.status)}`}>{tripStatusLabel(selectedTrip.status)}</span>
-                <span className="badge badge-travel">{(selectedTrip.persons || []).length} partecipanti</span>
+          <section className="card stack-card">
+            <div className="page-header">
+              <div>
+                <div className="card-title">Viaggio attivo</div>
+                <div className="card-subtitle">
+                  Modifica rapida del viaggio selezionato.
+                </div>
               </div>
-              <h2 style={{ marginTop: 10, fontSize: 28, fontWeight: 800 }}>{selectedTrip.name || 'Viaggio'}</h2>
-              <div className="small" style={{ marginTop: 6, color: 'rgba(255,255,255,0.85)' }}>
-                {selectedTrip.dateFrom ? `${fmtDate(selectedTrip.dateFrom)} → ${fmtDate(selectedTrip.dateTo)}` : 'Periodo da definire'}
+              <div className={`badge ${badgeClass(selectedTrip.status)}`}>
+                {labelStatus(selectedTrip.status)}
               </div>
             </div>
 
-            <div style={{ padding: 18 }}>
+            <div className="form-area">
               <div className="form-grid">
-                <div className="fg">
-                  <label className="fl">Destinazione</label>
-                  <input className="fi fi-travel" value={selectedTrip.name || ''} onChange={(e) => updateSelectedTrip({ name: e.target.value })} />
-                </div>
-                <div className="fg">
-                  <label className="fl">Stato</label>
-                  <select className="fi fi-travel" value={selectedTrip.status || 'planning'} onChange={(e) => updateSelectedTrip({ status: e.target.value })}>
-                    {TRIP_STATUS_OPTIONS.map((item) => (
-                      <option key={item.value} value={item.value}>{item.label}</option>
+                <label className="fg">
+                  <span className="fl">Nome viaggio</span>
+                  <input
+                    className="fi fi-travel"
+                    value={selectedTrip.name || ''}
+                    onChange={(e) => handleTripField('name', e.target.value)}
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Stato</span>
+                  <select
+                    className="fi fi-travel"
+                    value={selectedTrip.status || 'planning'}
+                    onChange={(e) => handleTripField('status', e.target.value)}
+                  >
+                    {TRIP_STATUS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
                     ))}
                   </select>
-                </div>
-                <div className="fg">
-                  <label className="fl">Dal</label>
-                  <input className="fi fi-travel" type="date" value={selectedTrip.dateFrom || ''} onChange={(e) => updateSelectedTrip({ dateFrom: e.target.value })} />
-                </div>
-                <div className="fg">
-                  <label className="fl">Al</label>
-                  <input className="fi fi-travel" type="date" value={selectedTrip.dateTo || ''} onChange={(e) => updateSelectedTrip({ dateTo: e.target.value })} />
-                </div>
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Data partenza</span>
+                  <input
+                    className="fi fi-travel"
+                    type="date"
+                    value={selectedTrip.dateFrom || ''}
+                    onChange={(e) => handleTripField('dateFrom', e.target.value)}
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Data ritorno</span>
+                  <input
+                    className="fi fi-travel"
+                    type="date"
+                    value={selectedTrip.dateTo || ''}
+                    onChange={(e) => handleTripField('dateTo', e.target.value)}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="data-area">
+              <div className="card-title">Partecipanti</div>
+              <div className="card-subtitle">
+                Selezione semplice dei componenti famiglia associati al viaggio.
               </div>
 
-              <div className="section-divider" />
-
-              <div className="section-title">Partecipanti</div>
-              <div className="row">
-                {members.map((member) => {
-                  const active = (selectedTrip.persons || []).includes(member.id)
+              <div className="family-switcher" style={{ marginTop: 12 }}>
+                {familyMembers.map((member) => {
+                  const active = selectedTrip.persons?.includes(member.id)
                   return (
                     <button
                       key={member.id}
@@ -572,671 +494,573 @@ export default function ViaggiPage() {
                       className={`member-chip ${active ? 'active' : ''}`}
                       onClick={() => toggleTripMember(selectedTrip.id, member.id)}
                     >
-                      <span className="chip-avatar">{member.initials || 'FH'}</span>
-                      <span>{member.name || member.role || member.initials || 'Membro'}</span>
+                      <span className="chip-avatar">
+                        {member.initials || member.name?.slice(0, 2) || 'FM'}
+                      </span>
+                      <span>{member.name || member.role || member.initials}</span>
                     </button>
                   )
                 })}
               </div>
-
-              <div className="row" style={{ marginTop: 14 }}>
-                <button className="btn btn-d btn-sm" onClick={() => deleteTrip(selectedTrip.id)}>
-                  Elimina viaggio
-                </button>
-              </div>
             </div>
           </section>
 
-          <section className="card">
-            <div className="row">
-              {[
-                ['overview', 'Overview'],
-                ['flights', 'Voli'],
-                ['hotels', 'Hotel'],
-                ['checklist', 'Checklist'],
-                ['diary', 'Diario'],
-                ['deadlines', 'Reminder'],
-              ].map(([key, label]) => (
-                <button
-                  key={key}
-                  className={`btn btn-sm ${activeTab === key ? 'btn-travel' : ''}`}
-                  onClick={() => setActiveTab(key)}
-                >
-                  {label}
-                </button>
-              ))}
+          <section className="card stack-card">
+            <div className="page-header">
+              <div>
+                <div className="card-title">Voli inseriti</div>
+                <div className="card-subtitle">
+                  Dati già presenti in tabella, modulo separato sotto.
+                </div>
+              </div>
             </div>
-          </section>
 
-          {activeTab === 'overview' ? (
-            <section className="card">
-              <div className="section-title">Overview viaggio</div>
-              <div className="grid-2 widget-grid">
-                <TravelMetric
-                  icon="🛫"
-                  label="Voli"
-                  value={(selectedTrip.flights || []).length}
-                  sub="Andate, ritorni e tratte intermedie"
-                />
-                <TravelMetric
-                  icon="🏨"
-                  label="Hotel"
-                  value={(selectedTrip.hotels || []).length}
-                  sub="Strutture e soggiorni prenotati"
-                />
-                <TravelMetric
-                  icon="🧳"
-                  label="Checklist"
-                  value={(selectedTrip.packingChecklist || []).reduce((acc, group) => acc + (group.items || []).length, 0)}
-                  sub="Elementi da preparare"
-                />
-                <TravelMetric
-                  icon="⏰"
-                  label="Scadenze"
-                  value={(selectedTrip.generalDeadlines || []).length}
-                  sub="Check-in, cancellazioni, booking"
-                />
+            <div className="data-area">
+              <div className="table-card">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Compagnia</th>
+                      <th>Tratta</th>
+                      <th>Data</th>
+                      <th>Orari</th>
+                      <th>Volo</th>
+                      <th>Prenotazione</th>
+                      <th>Costo</th>
+                      <th>Link</th>
+                      <th>Calendar</th>
+                      <th>Azioni</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedTripFlights.length ? (
+                      selectedTripFlights.map((flight) => (
+                        <tr key={flight.id}>
+                          <td>{flight.company || '—'}</td>
+                          <td>
+                            {flight.from || '—'} → {flight.to || '—'}
+                          </td>
+                          <td>{fmt(flight.date)}</td>
+                          <td>
+                            {flight.departureTime || '—'} / {flight.arrivalTime || '—'}
+                          </td>
+                          <td>{flight.flightNumber || '—'}</td>
+                          <td>{flight.bookingRef || '—'}</td>
+                          <td>{flight.purchaseCost || '—'}</td>
+                          <td>
+                            {flight.companyUrl ? (
+                              <a
+                                className="drive-link"
+                                href={flight.companyUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                Apri compagnia
+                              </a>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                          <td>
+                            {flight.date ? (
+                              <a
+                                className="drive-link"
+                                href={googleCalendarLink({
+                                  title: `${selectedTrip.name} - ${flight.company || 'Volo'}`,
+                                  startDate: flight.date,
+                                  endDate: flight.date,
+                                  details: `${flight.from || ''} → ${flight.to || ''} ${
+                                    flight.flightNumber || ''
+                                  }`.trim(),
+                                  location: `${flight.from || ''} ${flight.to ? `- ${flight.to}` : ''}`.trim(),
+                                })}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                Google Calendar
+                              </a>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="btn btn-d btn-s"
+                              onClick={() => deleteFlight(selectedTrip.id, flight.id)}
+                            >
+                              Elimina
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="10">
+                          <div className="empty">Nessun volo inserito.</div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="form-area">
+              <div className="card-title">Nuovo volo</div>
+              <div className="card-subtitle">
+                Compila il modulo: il volo salvato comparirà nella tabella sopra.
               </div>
 
-              <div className="timeline-list" style={{ marginTop: 16 }}>
-                <div className="timeline-item tl-travel">
-                  <div className="strong">Promemoria rapido</div>
-                  <div className="small muted" style={{ marginTop: 4 }}>
-                    Usa questa scheda come centro operativo del viaggio: partecipanti, booking, logistica e diario.
-                  </div>
-                </div>
-              </div>
-            </section>
-          ) : null}
-
-          {activeTab === 'flights' ? (
-            <section className="card">
-              <div className="between">
-                <div>
-                  <div className="section-title">Voli</div>
-                  <p className="page-subtitle">Carte volo con compagnia, orari, bagagli e riferimenti prenotazione.</p>
-                </div>
-                <button
-                  className="btn btn-travel"
-                  onClick={() =>
-                    addFlight(selectedTrip.id, {
-                      company: '',
-                      companyUrl: '',
-                      from: '',
-                      to: '',
-                      date: '',
-                      departureTime: '',
-                      arrivalTime: '',
-                      flightNumber: '',
-                      bookingRef: '',
-                      purchaseCost: '',
-                      baggage: [],
-                      deadlines: [],
-                    })
-                  }
-                >
-                  + Volo
-                </button>
-              </div>
-
-              <div className="timeline-list" style={{ marginTop: 12 }}>
-                {(selectedTrip.flights || []).length === 0 ? (
-                  <EmptyState text="Nessun volo registrato." />
-                ) : (
-                  (selectedTrip.flights || []).map((flight) => (
-                    <div key={flight.id} className="subsection-box">
-                      <div className="between">
-                        <div>
-                          <div className="strong">{flight.company || 'Compagnia aerea'}</div>
-                          <div className="small muted" style={{ marginTop: 4 }}>
-                            {flight.from || 'Partenza'} → {flight.to || 'Arrivo'} · {fmtDate(flight.date)}
-                          </div>
-                        </div>
-                        <div className="row">
-                          <button className="btn btn-sm" onClick={() => invertFlightRoute(selectedTrip.id, flight.id)}>
-                            Inverti tratta
-                          </button>
-                          <button className="btn btn-d btn-sm" onClick={() => deleteFlight(selectedTrip.id, flight.id)}>
-                            Elimina
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="form-grid" style={{ marginTop: 12 }}>
-                        <div className="fg">
-                          <label className="fl">Compagnia</label>
-                          <input
-                            className="fi fi-travel"
-                            value={flight.company || ''}
-                            onChange={(e) =>
-                              updateFlight(selectedTrip.id, flight.id, {
-                                company: e.target.value,
-                                companyUrl: AIRLINE_DIRECTORY[e.target.value] || flight.companyUrl || '',
-                              })
-                            }
-                          />
-                        </div>
-                        <div className="fg">
-                          <label className="fl">Numero volo</label>
-                          <input
-                            className="fi fi-travel"
-                            value={flight.flightNumber || ''}
-                            onChange={(e) => updateFlight(selectedTrip.id, flight.id, { flightNumber: e.target.value })}
-                          />
-                        </div>
-                        <div className="fg">
-                          <label className="fl">Da</label>
-                          <input
-                            className="fi fi-travel"
-                            value={flight.from || ''}
-                            onChange={(e) => updateFlight(selectedTrip.id, flight.id, { from: e.target.value })}
-                          />
-                        </div>
-                        <div className="fg">
-                          <label className="fl">A</label>
-                          <input
-                            className="fi fi-travel"
-                            value={flight.to || ''}
-                            onChange={(e) => updateFlight(selectedTrip.id, flight.id, { to: e.target.value })}
-                          />
-                        </div>
-                        <div className="fg">
-                          <label className="fl">Data</label>
-                          <input
-                            className="fi fi-travel"
-                            type="date"
-                            value={flight.date || ''}
-                            onChange={(e) => updateFlight(selectedTrip.id, flight.id, { date: e.target.value })}
-                          />
-                        </div>
-                        <div className="fg">
-                          <label className="fl">Partenza</label>
-                          <input
-                            className="fi fi-travel"
-                            type="time"
-                            value={flight.departureTime || ''}
-                            onChange={(e) => updateFlight(selectedTrip.id, flight.id, { departureTime: e.target.value })}
-                          />
-                        </div>
-                        <div className="fg">
-                          <label className="fl">Arrivo</label>
-                          <input
-                            className="fi fi-travel"
-                            type="time"
-                            value={flight.arrivalTime || ''}
-                            onChange={(e) => updateFlight(selectedTrip.id, flight.id, { arrivalTime: e.target.value })}
-                          />
-                        </div>
-                        <div className="fg">
-                          <label className="fl">Booking ref</label>
-                          <input
-                            className="fi fi-travel"
-                            value={flight.bookingRef || ''}
-                            onChange={(e) => updateFlight(selectedTrip.id, flight.id, { bookingRef: e.target.value })}
-                          />
-                        </div>
-                        <div className="fg">
-                          <label className="fl">Costo</label>
-                          <input
-                            className="fi fi-travel"
-                            value={flight.purchaseCost || ''}
-                            onChange={(e) => updateFlight(selectedTrip.id, flight.id, { purchaseCost: e.target.value })}
-                          />
-                        </div>
-                        <div className="fg col-full">
-                          <label className="fl">URL compagnia</label>
-                          <input
-                            className="fi fi-travel"
-                            value={flight.companyUrl || ''}
-                            onChange={(e) => updateFlight(selectedTrip.id, flight.id, { companyUrl: e.target.value })}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="row" style={{ marginTop: 10 }}>
-                        {flight.companyUrl ? (
-                          <a className="drive-link" href={flight.companyUrl} target="_blank" rel="noreferrer">
-                            🌐 Apri compagnia
-                          </a>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
-          ) : null}
-
-          {activeTab === 'hotels' ? (
-            <section className="card">
-              <div className="between">
-                <div>
-                  <div className="section-title">Hotel e soggiorni</div>
-                  <p className="page-subtitle">Booking, pagamenti, coordinate e aperture rapide su Maps.</p>
-                </div>
-                <button className="btn btn-travel" onClick={addHotel}>
-                  + Hotel
-                </button>
-              </div>
-
-              <div className="timeline-list" style={{ marginTop: 12 }}>
-                {(selectedTrip.hotels || []).length === 0 ? (
-                  <EmptyState text="Nessun hotel registrato." />
-                ) : (
-                  (selectedTrip.hotels || []).map((hotel) => {
-                    const mapUrl = mapsLink(hotel.address, hotel.lat, hotel.lng)
-                    const dirUrl = directionsLink(hotel.address, hotel.lat, hotel.lng)
-
-                    return (
-                      <div key={hotel.id} className="subsection-box">
-                        <div className="between">
-                          <div>
-                            <div className="strong">{hotel.name || 'Hotel / Alloggio'}</div>
-                            <div className="small muted" style={{ marginTop: 4 }}>
-                              {hotel.checkIn ? `${fmtDate(hotel.checkIn)} → ${fmtDate(hotel.checkOut)}` : 'Date da definire'}
-                            </div>
-                          </div>
-                          <button className="btn btn-d btn-sm" onClick={() => deleteHotel(hotel.id)}>
-                            Elimina
-                          </button>
-                        </div>
-
-                        <div className="form-grid" style={{ marginTop: 12 }}>
-                          <div className="fg">
-                            <label className="fl">Nome struttura</label>
-                            <input className="fi fi-travel" value={hotel.name || ''} onChange={(e) => updateHotel(hotel.id, { name: e.target.value })} />
-                          </div>
-                          <div className="fg">
-                            <label className="fl">Telefono</label>
-                            <input className="fi fi-travel" value={hotel.phone || ''} onChange={(e) => updateHotel(hotel.id, { phone: e.target.value })} />
-                          </div>
-                          <div className="fg col-full">
-                            <label className="fl">Indirizzo</label>
-                            <input className="fi fi-travel" value={hotel.address || ''} onChange={(e) => updateHotel(hotel.id, { address: e.target.value })} />
-                          </div>
-                          <div className="fg">
-                            <label className="fl">Latitudine</label>
-                            <input className="fi fi-travel" value={hotel.lat || ''} onChange={(e) => updateHotel(hotel.id, { lat: e.target.value })} />
-                          </div>
-                          <div className="fg">
-                            <label className="fl">Longitudine</label>
-                            <input className="fi fi-travel" value={hotel.lng || ''} onChange={(e) => updateHotel(hotel.id, { lng: e.target.value })} />
-                          </div>
-                          <div className="fg">
-                            <label className="fl">Check-in</label>
-                            <input className="fi fi-travel" type="date" value={hotel.checkIn || ''} onChange={(e) => updateHotel(hotel.id, { checkIn: e.target.value })} />
-                          </div>
-                          <div className="fg">
-                            <label className="fl">Check-out</label>
-                            <input className="fi fi-travel" type="date" value={hotel.checkOut || ''} onChange={(e) => updateHotel(hotel.id, { checkOut: e.target.value })} />
-                          </div>
-                          <div className="fg">
-                            <label className="fl">Pagato</label>
-                            <input className="fi fi-travel" value={hotel.paidAmount || ''} onChange={(e) => updateHotel(hotel.id, { paidAmount: e.target.value })} />
-                          </div>
-                          <div className="fg">
-                            <label className="fl">Da pagare</label>
-                            <input className="fi fi-travel" value={hotel.dueAmount || ''} onChange={(e) => updateHotel(hotel.id, { dueAmount: e.target.value })} />
-                          </div>
-                          <div className="fg">
-                            <label className="fl">Metodo pagamento</label>
-                            <input className="fi fi-travel" value={hotel.paymentMethod || ''} onChange={(e) => updateHotel(hotel.id, { paymentMethod: e.target.value })} />
-                          </div>
-                          <div className="fg">
-                            <label className="fl">Scadenza cancellazione</label>
-                            <input className="fi fi-travel" type="date" value={hotel.cancellationDate || ''} onChange={(e) => updateHotel(hotel.id, { cancellationDate: e.target.value })} />
-                          </div>
-                          <div className="fg col-full">
-                            <label className="fl">Booking URL</label>
-                            <input className="fi fi-travel" value={hotel.bookingUrl || ''} onChange={(e) => updateHotel(hotel.id, { bookingUrl: e.target.value })} />
-                          </div>
-                          <div className="fg col-full">
-                            <label className="fl">URL alternativo</label>
-                            <input className="fi fi-travel" value={hotel.alternateUrl || ''} onChange={(e) => updateHotel(hotel.id, { alternateUrl: e.target.value })} />
-                          </div>
-                        </div>
-
-                        <div className="row" style={{ marginTop: 10 }}>
-                          {hotel.bookingUrl ? (
-                            <a className="drive-link" href={hotel.bookingUrl} target="_blank" rel="noreferrer">
-                              🏨 Booking
-                            </a>
-                          ) : null}
-                          {hotel.alternateUrl ? (
-                            <a className="drive-link" href={hotel.alternateUrl} target="_blank" rel="noreferrer">
-                              🔗 Altro link
-                            </a>
-                          ) : null}
-                          {mapUrl ? (
-                            <a className="drive-link" href={mapUrl} target="_blank" rel="noreferrer">
-                              🗺️ Maps
-                            </a>
-                          ) : null}
-                          {dirUrl ? (
-                            <a className="drive-link" href={dirUrl} target="_blank" rel="noreferrer">
-                              🚗 Indicazioni
-                            </a>
-                          ) : null}
-                        </div>
-                      </div>
-                    )
-                  })
-                )}
-              </div>
-            </section>
-          ) : null}
-
-          {activeTab === 'checklist' ? (
-            <section className="card">
-              <div className="between">
-                <div>
-                  <div className="section-title">Checklist viaggio</div>
-                  <p className="page-subtitle">Preparazione famigliare con categorie e checkbox grandi per mobile.</p>
-                </div>
-                <button className="btn btn-travel" onClick={addChecklistGroup}>
-                  + Categoria checklist
-                </button>
-              </div>
-
-              <div className="timeline-list" style={{ marginTop: 12 }}>
-                {(selectedTrip.packingChecklist || []).length === 0 ? (
-                  <EmptyState text="Nessuna checklist presente." />
-                ) : (
-                  (selectedTrip.packingChecklist || []).map((group) => (
-                    <div key={group.id} className="subsection-box">
-                      <div className="between">
-                        <div className="strong">{group.category || 'Categoria checklist'}</div>
-                        <div className="row">
-                          <button className="btn btn-sm" onClick={() => addChecklistItem(group.id)}>
-                            + Elemento
-                          </button>
-                          <button className="btn btn-d btn-sm" onClick={() => deleteChecklistGroup(group.id)}>
-                            Elimina
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="form-grid" style={{ marginTop: 12 }}>
-                        <div className="fg">
-                          <label className="fl">Titolo categoria</label>
-                          <input className="fi fi-travel" value={group.category || ''} onChange={(e) => updateChecklistGroup(group.id, { category: e.target.value })} />
-                        </div>
-                        <div className="fg">
-                          <label className="fl">Colore</label>
-                          <input className="fi fi-travel" value={group.color || ''} onChange={(e) => updateChecklistGroup(group.id, { color: e.target.value })} />
-                        </div>
-                      </div>
-
-                      <div className="timeline-list" style={{ marginTop: 12 }}>
-                        {(group.items || []).length === 0 ? (
-                          <EmptyState text="Nessun elemento in questa categoria." />
-                        ) : (
-                          (group.items || []).map((item) => (
-                            <div key={item.id} className="between" style={{ padding: '12px 14px', borderRadius: 12, background: '#161922', border: '1px solid #262c3b' }}>
-                              <div className="row" style={{ flex: 1 }}>
-                                <input
-                                  type="checkbox"
-                                  checked={Boolean(item.done)}
-                                  onChange={(e) => updateChecklistItem(group.id, item.id, { done: e.target.checked })}
-                                  style={{ width: 20, height: 20 }}
-                                />
-                                <input
-                                  className="fi fi-travel"
-                                  value={item.label || ''}
-                                  onChange={(e) => updateChecklistItem(group.id, item.id, { label: e.target.value })}
-                                  style={{ flex: 1 }}
-                                />
-                              </div>
-                              <button className="btn btn-d btn-sm" onClick={() => deleteChecklistItem(group.id, item.id)}>
-                                X
-                              </button>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
-          ) : null}
-
-          {activeTab === 'diary' ? (
-            <section className="card">
-              <div className="between">
-                <div>
-                  <div className="section-title">Diario viaggio</div>
-                  <p className="page-subtitle">Giornate, luoghi, media e note utili da conservare nel tempo.</p>
-                </div>
-                <div className="row">
-                  <button className="btn btn-sm" onClick={addDiaryDay}>+ Giorno</button>
-                  <button className="btn btn-travel btn-sm" onClick={addDiaryPlace}>+ Luogo</button>
-                  <button className="btn btn-sm" onClick={addMediaLink}>+ Media</button>
-                </div>
-              </div>
-
-              <div className="stack-card" style={{ marginTop: 12 }}>
-                <div className="subsection-box">
-                  <label className="fl">Note generali</label>
-                  <textarea
+              <form className="form-shell form-grid" onSubmit={handleAddFlight}>
+                <label className="fg">
+                  <span className="fl">
+                    Compagnia <span className="required">*</span>
+                  </span>
+                  <input
                     className="fi fi-travel"
-                    value={selectedTrip.travelDiary?.notes || ''}
+                    value={flightForm.company}
+                    onChange={(e) => setFlightForm((prev) => ({ ...prev, company: e.target.value }))}
+                    placeholder="Es. Ryanair"
+                    required
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Numero volo</span>
+                  <input
+                    className="fi fi-travel"
+                    value={flightForm.flightNumber}
                     onChange={(e) =>
-                      updateSelectedTrip({
-                        travelDiary: {
-                          ...(selectedTrip.travelDiary || {}),
-                          notes: e.target.value,
-                        },
-                      })
+                      setFlightForm((prev) => ({ ...prev, flightNumber: e.target.value }))
+                    }
+                    placeholder="Es. FR1234"
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Da</span>
+                  <input
+                    className="fi fi-travel"
+                    value={flightForm.from}
+                    onChange={(e) => setFlightForm((prev) => ({ ...prev, from: e.target.value }))}
+                    placeholder="Aeroporto partenza"
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">A</span>
+                  <input
+                    className="fi fi-travel"
+                    value={flightForm.to}
+                    onChange={(e) => setFlightForm((prev) => ({ ...prev, to: e.target.value }))}
+                    placeholder="Aeroporto arrivo"
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Data</span>
+                  <input
+                    className="fi fi-travel"
+                    type="date"
+                    value={flightForm.date}
+                    onChange={(e) => setFlightForm((prev) => ({ ...prev, date: e.target.value }))}
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Prenotazione</span>
+                  <input
+                    className="fi fi-travel"
+                    value={flightForm.bookingRef}
+                    onChange={(e) =>
+                      setFlightForm((prev) => ({ ...prev, bookingRef: e.target.value }))
+                    }
+                    placeholder="Booking reference"
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Partenza</span>
+                  <input
+                    className="fi fi-travel"
+                    type="time"
+                    value={flightForm.departureTime}
+                    onChange={(e) =>
+                      setFlightForm((prev) => ({ ...prev, departureTime: e.target.value }))
                     }
                   />
-                </div>
+                </label>
 
-                <div className="subsection-box">
-                  <div className="section-title">Giornate</div>
-                  <div className="timeline-list" style={{ marginTop: 12 }}>
-                    {!(selectedTrip.travelDiary?.days || []).length ? (
-                      <EmptyState text="Nessuna giornata registrata." />
-                    ) : (
-                      (selectedTrip.travelDiary?.days || []).map((day) => (
-                        <div key={day.id} className="subsection-box">
-                          <div className="form-grid">
-                            <div className="fg">
-                              <label className="fl">Data</label>
-                              <input className="fi fi-travel" type="date" value={day.date || ''} onChange={(e) => updateDiaryDay(day.id, { date: e.target.value })} />
-                            </div>
-                            <div className="fg">
-                              <label className="fl">Titolo</label>
-                              <input className="fi fi-travel" value={day.title || ''} onChange={(e) => updateDiaryDay(day.id, { title: e.target.value })} />
-                            </div>
-                            <div className="fg col-full">
-                              <label className="fl">Note</label>
-                              <textarea className="fi fi-travel" value={day.notes || ''} onChange={(e) => updateDiaryDay(day.id, { notes: e.target.value })} />
-                            </div>
-                          </div>
-                          <button className="btn btn-d btn-sm" onClick={() => deleteDiaryDay(day.id)}>
-                            Elimina giorno
-                          </button>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
+                <label className="fg">
+                  <span className="fl">Arrivo</span>
+                  <input
+                    className="fi fi-travel"
+                    type="time"
+                    value={flightForm.arrivalTime}
+                    onChange={(e) =>
+                      setFlightForm((prev) => ({ ...prev, arrivalTime: e.target.value }))
+                    }
+                  />
+                </label>
 
-                <div className="subsection-box">
-                  <div className="section-title">Luoghi</div>
-                  <div className="timeline-list" style={{ marginTop: 12 }}>
-                    {!(selectedTrip.travelDiary?.places || []).length ? (
-                      <EmptyState text="Nessun luogo registrato." />
-                    ) : (
-                      (selectedTrip.travelDiary?.places || []).map((place) => {
-                        const mapUrl = mapsLink(place.address, place.lat, place.lng)
+                <label className="fg responsive-full">
+                  <span className="fl">Costo acquisto</span>
+                  <input
+                    className="fi fi-travel"
+                    value={flightForm.purchaseCost}
+                    onChange={(e) =>
+                      setFlightForm((prev) => ({ ...prev, purchaseCost: e.target.value }))
+                    }
+                    placeholder="Es. 180€"
+                  />
+                </label>
+
+                <div className="responsive-full actions-row">
+                  <button type="submit" className="btn btn-travel">
+                    + Salva volo
+                  </button>
+                </div>
+              </form>
+            </div>
+          </section>
+
+          <section className="card stack-card">
+            <div className="page-header">
+              <div>
+                <div className="card-title">Hotel inseriti</div>
+                <div className="card-subtitle">
+                  Strutture del viaggio attivo in tabella chiara.
+                </div>
+              </div>
+            </div>
+
+            <div className="data-area">
+              <div className="table-card">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Hotel</th>
+                      <th>Periodo</th>
+                      <th>Indirizzo</th>
+                      <th>Contatti</th>
+                      <th>Prenotazione</th>
+                      <th>Mappe</th>
+                      <th>Calendar</th>
+                      <th>Azioni</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedTripHotels.length ? (
+                      selectedTripHotels.map((hotel) => {
+                        const mapUrl = mapsLink(hotel.address, hotel.lat, hotel.lng)
+                        const dirUrl = directionsLink(hotel.address, hotel.lat, hotel.lng)
                         return (
-                          <div key={place.id} className="subsection-box">
-                            <div className="form-grid">
-                              <div className="fg">
-                                <label className="fl">Luogo</label>
-                                <input className="fi fi-travel" value={place.name || ''} onChange={(e) => updateDiaryPlace(place.id, { name: e.target.value })} />
-                              </div>
-                              <div className="fg">
-                                <label className="fl">Indirizzo</label>
-                                <input className="fi fi-travel" value={place.address || ''} onChange={(e) => updateDiaryPlace(place.id, { address: e.target.value })} />
-                              </div>
-                              <div className="fg">
-                                <label className="fl">Latitudine</label>
-                                <input className="fi fi-travel" value={place.lat || ''} onChange={(e) => updateDiaryPlace(place.id, { lat: e.target.value })} />
-                              </div>
-                              <div className="fg">
-                                <label className="fl">Longitudine</label>
-                                <input className="fi fi-travel" value={place.lng || ''} onChange={(e) => updateDiaryPlace(place.id, { lng: e.target.value })} />
-                              </div>
-                              <div className="fg col-full">
-                                <label className="fl">Note</label>
-                                <textarea className="fi fi-travel" value={place.note || ''} onChange={(e) => updateDiaryPlace(place.id, { note: e.target.value })} />
-                              </div>
-                            </div>
-                            <div className="row">
-                              {mapUrl ? (
-                                <a className="drive-link" href={mapUrl} target="_blank" rel="noreferrer">
-                                  🗺️ Apri su Maps
-                                </a>
-                              ) : null}
-                              <button className="btn btn-d btn-sm" onClick={() => deleteDiaryPlace(place.id)}>
-                                Elimina luogo
-                              </button>
-                            </div>
-                          </div>
-                        )
-                      })
-                    )}
-                  </div>
-                </div>
-
-                <div className="subsection-box">
-                  <div className="section-title">Media e link</div>
-                  <div className="timeline-list" style={{ marginTop: 12 }}>
-                    {!(selectedTrip.travelDiary?.mediaLinks || []).length ? (
-                      <EmptyState text="Nessun media o link salvato." />
-                    ) : (
-                      (selectedTrip.travelDiary?.mediaLinks || []).map((media) => {
-                        const thumb = guessMediaThumb(media.type, media.url, media.thumb)
-                        return (
-                          <div key={media.id} className="media-card">
-                            {thumb ? <img className="media-thumb" src={thumb} alt={media.title || 'Media'} /> : null}
-                            <div className="media-body">
-                              <div className="form-grid">
-                                <div className="fg">
-                                  <label className="fl">Tipo</label>
-                                  <input className="fi fi-travel" value={media.type || ''} onChange={(e) => updateMediaLink(media.id, { type: e.target.value })} />
-                                </div>
-                                <div className="fg">
-                                  <label className="fl">Titolo</label>
-                                  <input className="fi fi-travel" value={media.title || ''} onChange={(e) => updateMediaLink(media.id, { title: e.target.value })} />
-                                </div>
-                                <div className="fg col-full">
-                                  <label className="fl">URL</label>
-                                  <input className="fi fi-travel" value={media.url || ''} onChange={(e) => updateMediaLink(media.id, { url: e.target.value })} />
-                                </div>
-                                <div className="fg col-full">
-                                  <label className="fl">Thumbnail</label>
-                                  <input className="fi fi-travel" value={media.thumb || ''} onChange={(e) => updateMediaLink(media.id, { thumb: e.target.value })} />
-                                </div>
-                                <div className="fg col-full">
-                                  <label className="fl">Note</label>
-                                  <textarea className="fi fi-travel" value={media.note || ''} onChange={(e) => updateMediaLink(media.id, { note: e.target.value })} />
-                                </div>
-                              </div>
-                              <div className="row">
-                                {media.url ? (
-                                  <a className="drive-link" href={media.url} target="_blank" rel="noreferrer">
-                                    🔗 Apri media
+                          <tr key={hotel.id}>
+                            <td>{hotel.name || '—'}</td>
+                            <td>
+                              {fmt(hotel.checkIn)} → {fmt(hotel.checkOut)}
+                            </td>
+                            <td>{hotel.address || '—'}</td>
+                            <td>{hotel.phone || '—'}</td>
+                            <td>
+                              <div className="stack-card">
+                                {hotel.bookingUrl ? (
+                                  <a
+                                    className="drive-link"
+                                    href={hotel.bookingUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    Booking
                                   </a>
                                 ) : null}
-                                <button className="btn btn-d btn-sm" onClick={() => deleteMediaLink(media.id)}>
-                                  Elimina media
-                                </button>
+                                {hotel.alternateUrl ? (
+                                  <a
+                                    className="drive-link"
+                                    href={hotel.alternateUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    Link alternativo
+                                  </a>
+                                ) : !hotel.bookingUrl ? (
+                                  '—'
+                                ) : null}
                               </div>
-                            </div>
-                          </div>
+                            </td>
+                            <td>
+                              <div className="stack-card">
+                                {mapUrl ? (
+                                  <a
+                                    className="drive-link"
+                                    href={mapUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    Mappa
+                                  </a>
+                                ) : null}
+                                {dirUrl ? (
+                                  <a
+                                    className="drive-link"
+                                    href={dirUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    Indicazioni
+                                  </a>
+                                ) : !mapUrl ? (
+                                  '—'
+                                ) : null}
+                              </div>
+                            </td>
+                            <td>
+                              {hotel.checkIn ? (
+                                <a
+                                  className="drive-link"
+                                  href={googleCalendarLink({
+                                    title: `${selectedTrip.name} - ${hotel.name || 'Hotel'}`,
+                                    startDate: hotel.checkIn,
+                                    endDate: hotel.checkOut || hotel.checkIn,
+                                    details: hotel.phone || '',
+                                    location: hotel.address || '',
+                                  })}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  Google Calendar
+                                </a>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                className="btn btn-d btn-s"
+                                onClick={() => deleteHotel(selectedTrip.id, hotel.id)}
+                              >
+                                Elimina
+                              </button>
+                            </td>
+                          </tr>
                         )
                       })
+                    ) : (
+                      <tr>
+                        <td colSpan="8">
+                          <div className="empty">Nessun hotel inserito.</div>
+                        </td>
+                      </tr>
                     )}
-                  </div>
-                </div>
+                  </tbody>
+                </table>
               </div>
-            </section>
-          ) : null}
+            </div>
 
-          {activeTab === 'deadlines' ? (
-            <section className="card">
-              <div className="between">
-                <div>
-                  <div className="section-title">Reminder e scadenze</div>
-                  <p className="page-subtitle">Check-in, cancellazioni, prenotazioni e azioni importanti.</p>
-                </div>
-                <button className="btn btn-travel" onClick={addDeadline}>
-                  + Reminder
-                </button>
+            <div className="form-area">
+              <div className="card-title">Nuovo hotel</div>
+              <div className="card-subtitle">
+                Modulo separato dai dati già registrati.
               </div>
 
-              <div className="timeline-list" style={{ marginTop: 12 }}>
-                {(selectedTrip.generalDeadlines || []).length === 0 ? (
-                  <EmptyState text="Nessun reminder registrato." />
-                ) : (
-                  (selectedTrip.generalDeadlines || []).map((row) => {
-                    const calendarUrl = googleCalendarLink({
-                      title: row.title || 'Reminder viaggio',
-                      startDate: row.date,
-                      endDate: row.date,
-                      details: row.note || '',
-                      location: selectedTrip.name || '',
+              <form className="form-shell form-grid" onSubmit={handleAddHotel}>
+                <label className="fg">
+                  <span className="fl">
+                    Nome struttura <span className="required">*</span>
+                  </span>
+                  <input
+                    className="fi fi-travel"
+                    value={hotelForm.name}
+                    onChange={(e) => setHotelForm((prev) => ({ ...prev, name: e.target.value }))}
+                    placeholder="Es. Athena Resort"
+                    required
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Telefono</span>
+                  <input
+                    className="fi fi-travel"
+                    value={hotelForm.phone}
+                    onChange={(e) => setHotelForm((prev) => ({ ...prev, phone: e.target.value }))}
+                    placeholder="Telefono struttura"
+                  />
+                </label>
+
+                <label className="fg responsive-full">
+                  <span className="fl">Indirizzo</span>
+                  <input
+                    className="fi fi-travel"
+                    value={hotelForm.address}
+                    onChange={(e) => setHotelForm((prev) => ({ ...prev, address: e.target.value }))}
+                    placeholder="Indirizzo completo"
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Latitudine</span>
+                  <input
+                    className="fi fi-travel"
+                    value={hotelForm.lat}
+                    onChange={(e) => setHotelForm((prev) => ({ ...prev, lat: e.target.value }))}
+                    placeholder="37.12345"
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Longitudine</span>
+                  <input
+                    className="fi fi-travel"
+                    value={hotelForm.lng}
+                    onChange={(e) => setHotelForm((prev) => ({ ...prev, lng: e.target.value }))}
+                    placeholder="14.12345"
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Check-in</span>
+                  <input
+                    className="fi fi-travel"
+                    type="date"
+                    value={hotelForm.checkIn}
+                    onChange={(e) => setHotelForm((prev) => ({ ...prev, checkIn: e.target.value }))}
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Check-out</span>
+                  <input
+                    className="fi fi-travel"
+                    type="date"
+                    value={hotelForm.checkOut}
+                    onChange={(e) =>
+                      setHotelForm((prev) => ({ ...prev, checkOut: e.target.value }))
+                    }
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Link prenotazione</span>
+                  <input
+                    className="fi fi-travel"
+                    value={hotelForm.bookingUrl}
+                    onChange={(e) =>
+                      setHotelForm((prev) => ({ ...prev, bookingUrl: e.target.value }))
+                    }
+                    placeholder="https://..."
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Link alternativo</span>
+                  <input
+                    className="fi fi-travel"
+                    value={hotelForm.alternateUrl}
+                    onChange={(e) =>
+                      setHotelForm((prev) => ({ ...prev, alternateUrl: e.target.value }))
+                    }
+                    placeholder="https://..."
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Pagato</span>
+                  <input
+                    className="fi fi-travel"
+                    value={hotelForm.paidAmount}
+                    onChange={(e) =>
+                      setHotelForm((prev) => ({ ...prev, paidAmount: e.target.value }))
+                    }
+                    placeholder="Es. 200€"
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Da pagare</span>
+                  <input
+                    className="fi fi-travel"
+                    value={hotelForm.dueAmount}
+                    onChange={(e) =>
+                      setHotelForm((prev) => ({ ...prev, dueAmount: e.target.value }))
+                    }
+                    placeholder="Es. 150€"
+                  />
+                </label>
+
+                <label className="fg responsive-full">
+                  <span className="fl">Metodo pagamento</span>
+                  <input
+                    className="fi fi-travel"
+                    value={hotelForm.paymentMethod}
+                    onChange={(e) =>
+                      setHotelForm((prev) => ({ ...prev, paymentMethod: e.target.value }))
+                    }
+                    placeholder="Es. Carta / bonifico / saldo in struttura"
+                  />
+                </label>
+
+                <label className="fg responsive-full">
+                  <span className="fl">Scadenza cancellazione</span>
+                  <input
+                    className="fi fi-travel"
+                    type="date"
+                    value={hotelForm.cancellationDate}
+                    onChange={(e) =>
+                      setHotelForm((prev) => ({
+                        ...prev,
+                        cancellationDate: e.target.value,
+                      }))
+                    }
+                  />
+                </label>
+
+                <div className="responsive-full actions-row">
+                  <button type="submit" className="btn btn-travel">
+                    + Salva hotel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </section>
+
+          <section className="card stack-card">
+            <div className="page-header">
+              <div>
+                <div className="card-title">Diario viaggio</div>
+                <div className="card-subtitle">
+                  Campo unico, semplice e leggibile per note generali del viaggio.
+                </div>
+              </div>
+            </div>
+
+            <div className="form-area">
+              <label className="fg">
+                <span className="fl">Note viaggio</span>
+                <textarea
+                  className="fi fi-travel"
+                  value={selectedTrip.travelDiary?.notes || ''}
+                  onChange={(e) =>
+                    updateTrip(selectedTrip.id, {
+                      travelDiary: {
+                        ...(selectedTrip.travelDiary || {
+                          days: [],
+                          places: [],
+                          mediaLinks: [],
+                          notes: '',
+                        }),
+                        notes: e.target.value,
+                      },
                     })
-
-                    return (
-                      <div key={row.id} className="subsection-box">
-                        <div className="form-grid">
-                          <div className="fg">
-                            <label className="fl">Titolo</label>
-                            <input className="fi fi-travel" value={row.title || ''} onChange={(e) => updateDeadline(row.id, { title: e.target.value })} />
-                          </div>
-                          <div className="fg">
-                            <label className="fl">Data</label>
-                            <input className="fi fi-travel" type="date" value={row.date || ''} onChange={(e) => updateDeadline(row.id, { date: e.target.value })} />
-                          </div>
-                          <div className="fg col-full">
-                            <label className="fl">Note</label>
-                            <textarea className="fi fi-travel" value={row.note || ''} onChange={(e) => updateDeadline(row.id, { note: e.target.value })} />
-                          </div>
-                          <div className="fg col-full">
-                            <label className="fl">URL utile</label>
-                            <input className="fi fi-travel" value={row.url || ''} onChange={(e) => updateDeadline(row.id, { url: e.target.value })} />
-                          </div>
-                        </div>
-
-                        <div className="row">
-                          {calendarUrl ? (
-                            <a className="drive-link" href={calendarUrl} target="_blank" rel="noreferrer">
-                              📅 Calendar
-                            </a>
-                          ) : null}
-                          {row.url ? (
-                            <a className="drive-link" href={row.url} target="_blank" rel="noreferrer">
-                              🔗 Apri link
-                            </a>
-                          ) : null}
-                          <button className="btn btn-d btn-sm" onClick={() => deleteDeadline(row.id)}>
-                            Elimina
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })
-                )}
-              </div>
-            </section>
-          ) : null}
+                  }
+                  placeholder="Programma sintetico, appunti, cose da ricordare..."
+                />
+              </label>
+            </div>
+          </section>
         </>
-      )}
+      ) : null}
     </div>
   )
 }
