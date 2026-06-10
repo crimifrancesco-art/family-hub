@@ -463,10 +463,16 @@ export function AppProvider({ children }) {
   })
   const [loadingData, setLoadingData] = useState(true)
   const [syncError, setSyncError] = useState('')
+
   const saveTimerRef = useRef(null)
   const hasLoadedRef = useRef(false)
   const realtimeChannelRef = useRef(null)
   const lastSavedAtRef = useRef('')
+  const lastLocalEditAtRef = useRef(0)
+
+  const markLocalEdit = useCallback(() => {
+    lastLocalEditAtRef.current = Date.now()
+  }, [])
 
   const hydrate = useCallback((payload) => {
     const normalized = normalizeState(payload)
@@ -587,6 +593,7 @@ export function AppProvider({ children }) {
           (payload) => {
             const nextUpdatedAt = payload.new?.updated_at || ''
             if (nextUpdatedAt && nextUpdatedAt === lastSavedAtRef.current) return
+            if (Date.now() - lastLocalEditAtRef.current < 2000) return
             if (payload.new?.payload) {
               lastSavedAtRef.current = nextUpdatedAt
               hydrate(payload.new.payload)
@@ -607,7 +614,7 @@ export function AppProvider({ children }) {
         realtimeChannelRef.current = null
       }
     }
-  }, [hydrate, loadRemoteState, saveToSupabase])
+  }, [hydrate, loadRemoteState])
 
   const payloadForSave = useMemo(
     () => ({ trips, familyMembers, archiveTables, healthTables }),
@@ -625,10 +632,12 @@ export function AppProvider({ children }) {
   }, [payloadForSave, saveToSupabase])
 
   const updateFamilyMember = useCallback((memberId, payload) => {
+    markLocalEdit()
     setFamilyMembers((prev) => prev.map((member) => (member.id === memberId ? { ...member, ...payload } : member)))
-  }, [])
+  }, [markLocalEdit])
 
   const addMedicationToMember = useCallback((memberId, label = 'Nuovo farmaco') => {
+    markLocalEdit()
     setFamilyMembers((prev) =>
       prev.map((member) =>
         member.id === memberId
@@ -642,9 +651,10 @@ export function AppProvider({ children }) {
           : member,
       ),
     )
-  }, [])
+  }, [markLocalEdit])
 
   const updateMedicationFromMember = useCallback((memberId, medicationId, payload) => {
+    markLocalEdit()
     setFamilyMembers((prev) =>
       prev.map((member) =>
         member.id === memberId
@@ -657,9 +667,10 @@ export function AppProvider({ children }) {
           : member,
       ),
     )
-  }, [])
+  }, [markLocalEdit])
 
   const deleteMedicationFromMember = useCallback((memberId, medicationId) => {
+    markLocalEdit()
     setFamilyMembers((prev) =>
       prev.map((member) =>
         member.id === memberId
@@ -667,9 +678,10 @@ export function AppProvider({ children }) {
           : member,
       ),
     )
-  }, [])
+  }, [markLocalEdit])
 
   const updateArchive = useCallback((updater) => {
+    markLocalEdit()
     setArchiveTables((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater
       return {
@@ -678,9 +690,10 @@ export function AppProvider({ children }) {
         warranties: ensureArray(next.warranties),
       }
     })
-  }, [])
+  }, [markLocalEdit])
 
   const updateHealth = useCallback((updater) => {
+    markLocalEdit()
     setHealthTables((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater
       return {
@@ -691,9 +704,10 @@ export function AppProvider({ children }) {
         legacyTherapies: ensureArray(next.legacyTherapies),
       }
     })
-  }, [])
+  }, [markLocalEdit])
 
   const addTrip = useCallback((payload) => {
+    markLocalEdit()
     setTrips((prev) => [
       ...prev,
       ensureTrip({
@@ -706,17 +720,20 @@ export function AppProvider({ children }) {
         })),
       }),
     ])
-  }, [])
+  }, [markLocalEdit])
 
   const updateTrip = useCallback((tripId, payload) => {
+    markLocalEdit()
     setTrips((prev) => prev.map((trip) => (trip.id === tripId ? ensureTrip({ ...trip, ...payload }) : ensureTrip(trip))))
-  }, [])
+  }, [markLocalEdit])
 
   const deleteTrip = useCallback((tripId) => {
+    markLocalEdit()
     setTrips((prev) => prev.filter((trip) => trip.id !== tripId))
-  }, [])
+  }, [markLocalEdit])
 
   const toggleTripMember = useCallback((tripId, memberId) => {
+    markLocalEdit()
     setTrips((prev) =>
       updateTripInList(prev, tripId, (trip) => ({
         ...trip,
@@ -725,18 +742,20 @@ export function AppProvider({ children }) {
           : [...trip.persons, memberId],
       })),
     )
-  }, [])
+  }, [markLocalEdit])
 
   const addFlight = useCallback((tripId, payload) => {
+    markLocalEdit()
     setTrips((prev) =>
       updateTripInList(prev, tripId, (trip) => ({
         ...trip,
         flights: [...trip.flights, ensureFlight({ ...payload, companyUrl: payload.companyUrl || airlineUrl(payload.company) })],
       })),
     )
-  }, [])
+  }, [markLocalEdit])
 
   const updateFlight = useCallback((tripId, flightId, payload) => {
+    markLocalEdit()
     setTrips((prev) =>
       updateTripInList(prev, tripId, (trip) => ({
         ...trip,
@@ -751,18 +770,20 @@ export function AppProvider({ children }) {
         ),
       })),
     )
-  }, [])
+  }, [markLocalEdit])
 
   const deleteFlight = useCallback((tripId, flightId) => {
+    markLocalEdit()
     setTrips((prev) =>
       updateTripInList(prev, tripId, (trip) => ({
         ...trip,
         flights: trip.flights.filter((flight) => flight.id !== flightId),
       })),
     )
-  }, [])
+  }, [markLocalEdit])
 
   const invertFlightRoute = useCallback((tripId, flightId) => {
+    markLocalEdit()
     setTrips((prev) =>
       updateTripInList(prev, tripId, (trip) => ({
         ...trip,
@@ -771,7 +792,7 @@ export function AppProvider({ children }) {
         ),
       })),
     )
-  }, [])
+  }, [markLocalEdit])
 
   const value = useMemo(
     () => ({
