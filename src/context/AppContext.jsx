@@ -153,6 +153,21 @@ export const TRAVEL_CHECKLIST_TEMPLATE = [
       'Pendrive / Hard Disk',
     ],
   },
+  {
+    category: 'Abbigliamento',
+    color: 'orange',
+    items: [
+      'Magliette',
+      'Pantaloni / Shorts',
+      'Biancheria',
+      'Calze',
+      'Pigiama',
+      'Felpa / Giacca',
+      'Scarpe comode',
+      'Costume',
+      'Ciabatte',
+    ],
+  },
 ]
 
 const DEFAULT_ARCHIVE_TABLES = {
@@ -248,6 +263,7 @@ const DEFAULT_TRIPS = [
       items: group.items.map((label) => ({ id: uid('chk'), label, done: false })),
     })),
     generalDeadlines: [],
+    notes: '',
   },
 ]
 
@@ -313,15 +329,6 @@ const ensureTherapyMedication = (row = {}) => ({
   notes: row.notes || '',
 })
 
-const ensureMedication = (med = {}) => ({
-  id: med?.id || uid('med'),
-  name: med?.name || '',
-  dosage: med?.dosage || '',
-  schedule: med?.schedule || '',
-  indication: med?.indication || '',
-  notes: med?.notes || '',
-})
-
 const ensureFlight = (flight = {}) => ({
   id: flight.id || uid('flight'),
   company: flight.company || '',
@@ -334,8 +341,18 @@ const ensureFlight = (flight = {}) => ({
   flightNumber: flight.flightNumber || '',
   bookingRef: flight.bookingRef || '',
   purchaseCost: flight.purchaseCost || '',
-  baggage: ensureArray(flight.baggage),
-  deadlines: ensureArray(flight.deadlines),
+  baggage: ensureArray(flight.baggage).map((bag) => ({
+    id: bag?.id || uid('bag'),
+    label: bag?.label || '',
+    qty: bag?.qty || 1,
+    cost: bag?.cost || '',
+  })),
+  deadlines: ensureArray(flight.deadlines).map((item) => ({
+    id: item?.id || uid('deadline'),
+    title: item?.title || '',
+    date: item?.date || '',
+    notes: item?.notes || '',
+  })),
 })
 
 const ensureHotel = (hotel = {}) => ({
@@ -353,7 +370,81 @@ const ensureHotel = (hotel = {}) => ({
   dueAmount: hotel.dueAmount || '',
   paymentMethod: hotel.paymentMethod || '',
   cancellationDate: hotel.cancellationDate || '',
-  deadlines: ensureArray(hotel.deadlines),
+  deadlines: ensureArray(hotel.deadlines).map((item) => ({
+    id: item?.id || uid('deadline'),
+    title: item?.title || '',
+    date: item?.date || '',
+    notes: item?.notes || '',
+  })),
+})
+
+const ensureParkingReservation = (row = {}) => ({
+  id: row.id || uid('park'),
+  name: row.name || '',
+  address: row.address || '',
+  dateFrom: row.dateFrom || '',
+  dateTo: row.dateTo || '',
+  cost: row.cost || '',
+  bookingUrl: row.bookingUrl || '',
+  notes: row.notes || '',
+})
+
+const ensureCarRental = (row = {}) => ({
+  id: row.id || uid('car'),
+  company: row.company || '',
+  pickupPlace: row.pickupPlace || '',
+  dropoffPlace: row.dropoffPlace || '',
+  pickupDate: row.pickupDate || '',
+  dropoffDate: row.dropoffDate || '',
+  cost: row.cost || '',
+  deposit: row.deposit || '',
+  bookingUrl: row.bookingUrl || '',
+  notes: row.notes || '',
+})
+
+const ensureDiaryDay = (row = {}) => ({
+  id: row.id || uid('day'),
+  date: row.date || '',
+  title: row.title || '',
+  notes: row.notes || '',
+})
+
+const ensureDiaryPlace = (row = {}) => ({
+  id: row.id || uid('place'),
+  type: row.type || '',
+  name: row.name || '',
+  address: row.address || '',
+  lat: row.lat || '',
+  lng: row.lng || '',
+  url: row.url || '',
+  rating: row.rating || '',
+  reviewNote: row.reviewNote || '',
+  imageUrl: row.imageUrl || '',
+  notes: row.notes || '',
+})
+
+const ensureDiaryMedia = (row = {}) => ({
+  id: row.id || uid('media'),
+  type: row.type || 'link',
+  title: row.title || '',
+  url: row.url || '',
+  source: row.source || '',
+  thumbnail: row.thumbnail || '',
+  notes: row.notes || '',
+})
+
+const ensureChecklistGroup = (group = {}) => ({
+  id: group.id || uid('grp'),
+  category: group.category || 'Checklist',
+  color: group.color || 'blue',
+  items: ensureArray(group.items).map((item) => {
+    if (typeof item === 'string') return { id: uid('chk'), label: item, done: false }
+    return {
+      id: item?.id || uid('chk'),
+      label: item?.label || '',
+      done: Boolean(item?.done),
+    }
+  }),
 })
 
 const ensureTrip = (trip = {}) => ({
@@ -365,16 +456,17 @@ const ensureTrip = (trip = {}) => ({
   persons: ensureArray(trip.persons),
   flights: ensureArray(trip.flights).map(ensureFlight),
   hotels: ensureArray(trip.hotels).map(ensureHotel),
-  parkingReservations: ensureArray(trip.parkingReservations),
-  carRentals: ensureArray(trip.carRentals),
+  parkingReservations: ensureArray(trip.parkingReservations).map(ensureParkingReservation),
+  carRentals: ensureArray(trip.carRentals).map(ensureCarRental),
   travelDiary: {
-    days: ensureArray(trip.travelDiary?.days),
-    places: ensureArray(trip.travelDiary?.places),
-    mediaLinks: ensureArray(trip.travelDiary?.mediaLinks),
+    days: ensureArray(trip.travelDiary?.days).map(ensureDiaryDay),
+    places: ensureArray(trip.travelDiary?.places).map(ensureDiaryPlace),
+    mediaLinks: ensureArray(trip.travelDiary?.mediaLinks).map(ensureDiaryMedia),
     notes: trip.travelDiary?.notes || '',
   },
-  packingChecklist: ensureArray(trip.packingChecklist),
+  packingChecklist: ensureArray(trip.packingChecklist).map(ensureChecklistGroup),
   generalDeadlines: ensureArray(trip.generalDeadlines),
+  notes: trip.notes || '',
 })
 
 function normalizeState(raw) {
@@ -399,7 +491,14 @@ function normalizeState(raw) {
       chronicConditions: member?.chronicConditions || '',
       currentTherapies: member?.currentTherapies || '',
       emergencyNotes: member?.emergencyNotes || '',
-      medications: ensureArray(member?.medications).map(ensureMedication),
+      medications: ensureArray(member?.medications).map((med) => ({
+        id: med?.id || uid('med'),
+        name: med?.name || '',
+        dosage: med?.dosage || '',
+        schedule: med?.schedule || '',
+        indication: med?.indication || '',
+        notes: med?.notes || '',
+      })),
       documents: {
         idCard: member?.documents?.idCard || '',
         passport: member?.documents?.passport || '',
@@ -408,9 +507,7 @@ function normalizeState(raw) {
       },
     })),
     archiveTables: {
-      categories: ensureArray(source.archiveTables?.categories || fallback.archiveTables.categories).map(
-        ensureArchiveCategory,
-      ),
+      categories: ensureArray(source.archiveTables?.categories || fallback.archiveTables.categories).map(ensureArchiveCategory),
       documents: ensureArray(source.archiveTables?.documents || fallback.archiveTables.documents).map((row) => ({
         id: row?.id || uid('doc'),
         category: row?.category || '',
@@ -437,15 +534,11 @@ function normalizeState(raw) {
       })),
     },
     healthTables: {
-      specialistVisits: ensureArray(
-        source.healthTables?.specialistVisits || fallback.healthTables.specialistVisits,
-      ).map(ensureVisit),
-      visitTherapies: ensureArray(
-        source.healthTables?.visitTherapies || fallback.healthTables.visitTherapies,
-      ).map(ensureVisitTherapy),
-      therapyMedications: ensureArray(
-        source.healthTables?.therapyMedications || fallback.healthTables.therapyMedications,
-      ).map(ensureTherapyMedication),
+      specialistVisits: ensureArray(source.healthTables?.specialistVisits || fallback.healthTables.specialistVisits).map(ensureVisit),
+      visitTherapies: ensureArray(source.healthTables?.visitTherapies || fallback.healthTables.visitTherapies).map(ensureVisitTherapy),
+      therapyMedications: ensureArray(source.healthTables?.therapyMedications || fallback.healthTables.therapyMedications).map(
+        ensureTherapyMedication,
+      ),
       legacyAppointments: ensureArray(source.healthTables?.legacyAppointments || source.healthTables?.appointments || []),
       legacyTherapies: ensureArray(source.healthTables?.legacyTherapies || source.healthTables?.therapies || []),
     },
@@ -473,10 +566,12 @@ export function AppProvider({ children }) {
   })
   const [loadingData, setLoadingData] = useState(true)
   const [syncError, setSyncError] = useState('')
+
   const saveTimerRef = useRef(null)
   const hasLoadedRef = useRef(false)
   const realtimeChannelRef = useRef(null)
   const lastSavedAtRef = useRef('')
+  const pendingSaveRef = useRef(false)
 
   const hydrate = useCallback((payload) => {
     const normalized = normalizeState(payload)
@@ -497,11 +592,7 @@ export function AppProvider({ children }) {
       return
     }
 
-    const { data, error } = await supabase
-      .from('app_state')
-      .select('payload, updated_at')
-      .eq('user_id', userId)
-      .maybeSingle()
+    const { data, error } = await supabase.from('app_state').select('payload, updated_at').eq('user_id', userId).maybeSingle()
 
     if (error) {
       setSyncError(`Errore caricamento Supabase: ${error.message}`)
@@ -546,6 +637,8 @@ export function AppProvider({ children }) {
     const userId = user?.id
     if (!userId) return
 
+    pendingSaveRef.current = true
+
     const nowIso = new Date().toISOString()
     const { error } = await supabase.from('app_state').upsert(
       {
@@ -558,10 +651,12 @@ export function AppProvider({ children }) {
 
     if (error) {
       setSyncError(`Errore salvataggio Supabase: ${error.message}`)
+      pendingSaveRef.current = false
       return
     }
 
     lastSavedAtRef.current = nowIso
+    pendingSaveRef.current = false
     setSyncError('')
   }, [])
 
@@ -596,7 +691,10 @@ export function AppProvider({ children }) {
           },
           (payload) => {
             const nextUpdatedAt = payload.new?.updated_at || ''
+
+            if (pendingSaveRef.current) return
             if (nextUpdatedAt && nextUpdatedAt === lastSavedAtRef.current) return
+
             if (payload.new?.payload) {
               lastSavedAtRef.current = nextUpdatedAt
               hydrate(payload.new.payload)
@@ -626,10 +724,13 @@ export function AppProvider({ children }) {
 
   useEffect(() => {
     if (!hasLoadedRef.current) return
+
     clearTimeout(saveTimerRef.current)
+    pendingSaveRef.current = true
+
     saveTimerRef.current = setTimeout(() => {
       saveToSupabase(payloadForSave)
-    }, 500)
+    }, 150)
 
     return () => clearTimeout(saveTimerRef.current)
   }, [payloadForSave, saveToSupabase])
@@ -638,60 +739,44 @@ export function AppProvider({ children }) {
     setFamilyMembers((prev) => prev.map((member) => (member.id === memberId ? { ...member, ...payload } : member)))
   }, [])
 
-  const createMedicationForMember = useCallback((memberId, payload = {}) => {
-    const nextMedication = ensureMedication({ ...payload, id: uid('med') })
-    setFamilyMembers((prev) =>
-      prev.map((member) =>
-        member.id === memberId
-          ? {
-              ...member,
-              medications: [...ensureArray(member.medications).map(ensureMedication), nextMedication],
-            }
-          : member,
-      ),
-    )
-    return nextMedication.id
-  }, [])
-
-  const updateMemberMedication = useCallback((memberId, medicationId, payload) => {
-    setFamilyMembers((prev) =>
-      prev.map((member) =>
-        member.id === memberId
-          ? {
-              ...member,
-              medications: ensureArray(member.medications).map((med) =>
-                med.id === medicationId ? ensureMedication({ ...med, ...payload }) : ensureMedication(med),
-              ),
-            }
-          : member,
-      ),
-    )
-  }, [])
-
-  const deleteMemberMedication = useCallback((memberId, medicationId) => {
-    setFamilyMembers((prev) =>
-      prev.map((member) =>
-        member.id === memberId
-          ? {
-              ...member,
-              medications: ensureArray(member.medications).filter((med) => med.id !== medicationId),
-            }
-          : member,
-      ),
-    )
-  }, [])
-
   const addMedicationToMember = useCallback((memberId, label = 'Nuovo farmaco') => {
-    createMedicationForMember(memberId, { name: label })
-  }, [createMedicationForMember])
+    setFamilyMembers((prev) =>
+      prev.map((member) =>
+        member.id === memberId
+          ? {
+              ...member,
+              medications: [
+                ...ensureArray(member.medications),
+                { id: uid('med'), name: label, dosage: '', schedule: '', indication: '', notes: '' },
+              ],
+            }
+          : member,
+      ),
+    )
+  }, [])
 
   const updateMedicationFromMember = useCallback((memberId, medicationId, payload) => {
-    updateMemberMedication(memberId, medicationId, payload)
-  }, [updateMemberMedication])
+    setFamilyMembers((prev) =>
+      prev.map((member) =>
+        member.id === memberId
+          ? {
+              ...member,
+              medications: ensureArray(member.medications).map((med) => (med.id === medicationId ? { ...med, ...payload } : med)),
+            }
+          : member,
+      ),
+    )
+  }, [])
 
   const deleteMedicationFromMember = useCallback((memberId, medicationId) => {
-    deleteMemberMedication(memberId, medicationId)
-  }, [deleteMemberMedication])
+    setFamilyMembers((prev) =>
+      prev.map((member) =>
+        member.id === memberId
+          ? { ...member, medications: ensureArray(member.medications).filter((med) => med.id !== medicationId) }
+          : member,
+      ),
+    )
+  }, [])
 
   const updateArchive = useCallback((updater) => {
     setArchiveTables((prev) => {
@@ -718,18 +803,18 @@ export function AppProvider({ children }) {
   }, [])
 
   const addTrip = useCallback((payload) => {
-    setTrips((prev) => [
-      ...prev,
-      ensureTrip({
-        ...payload,
-        id: uid('trip'),
-        packingChecklist: TRAVEL_CHECKLIST_TEMPLATE.map((group) => ({
-          ...group,
-          id: uid('grp'),
-          items: group.items.map((label) => ({ id: uid('chk'), label, done: false })),
-        })),
-      }),
-    ])
+    const created = ensureTrip({
+      ...payload,
+      id: uid('trip'),
+      packingChecklist: TRAVEL_CHECKLIST_TEMPLATE.map((group) => ({
+        ...group,
+        id: uid('grp'),
+        items: group.items.map((label) => ({ id: uid('chk'), label, done: false })),
+      })),
+    })
+
+    setTrips((prev) => [...prev, created])
+    return created
   }, [])
 
   const updateTrip = useCallback((tripId, payload) => {
@@ -744,9 +829,7 @@ export function AppProvider({ children }) {
     setTrips((prev) =>
       updateTripInList(prev, tripId, (trip) => ({
         ...trip,
-        persons: trip.persons.includes(memberId)
-          ? trip.persons.filter((id) => id !== memberId)
-          : [...trip.persons, memberId],
+        persons: trip.persons.includes(memberId) ? trip.persons.filter((id) => id !== memberId) : [...trip.persons, memberId],
       })),
     )
   }, [])
@@ -755,13 +838,7 @@ export function AppProvider({ children }) {
     setTrips((prev) =>
       updateTripInList(prev, tripId, (trip) => ({
         ...trip,
-        flights: [
-          ...trip.flights,
-          ensureFlight({
-            ...payload,
-            companyUrl: payload.companyUrl || airlineUrl(payload.company),
-          }),
-        ],
+        flights: [...trip.flights, ensureFlight({ ...payload, id: uid('flight'), companyUrl: payload.companyUrl || airlineUrl(payload.company) })],
       })),
     )
   }, [])
@@ -803,6 +880,70 @@ export function AppProvider({ children }) {
     )
   }, [])
 
+  const addFlightBaggage = useCallback((tripId, flightId, payload) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        flights: trip.flights.map((flight) =>
+          flight.id === flightId
+            ? ensureFlight({
+                ...flight,
+                baggage: [...ensureArray(flight.baggage), { id: uid('bag'), label: payload.label || '', qty: payload.qty || 1, cost: payload.cost || '' }],
+              })
+            : ensureFlight(flight),
+        ),
+      })),
+    )
+  }, [])
+
+  const deleteFlightBaggage = useCallback((tripId, flightId, baggageId) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        flights: trip.flights.map((flight) =>
+          flight.id === flightId
+            ? ensureFlight({
+                ...flight,
+                baggage: ensureArray(flight.baggage).filter((bag) => bag.id !== baggageId),
+              })
+            : ensureFlight(flight),
+        ),
+      })),
+    )
+  }, [])
+
+  const addFlightDeadline = useCallback((tripId, flightId, payload) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        flights: trip.flights.map((flight) =>
+          flight.id === flightId
+            ? ensureFlight({
+                ...flight,
+                deadlines: [...ensureArray(flight.deadlines), { id: uid('deadline'), title: payload.title || '', date: payload.date || '', notes: payload.notes || '' }],
+              })
+            : ensureFlight(flight),
+        ),
+      })),
+    )
+  }, [])
+
+  const deleteFlightDeadline = useCallback((tripId, flightId, deadlineId) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        flights: trip.flights.map((flight) =>
+          flight.id === flightId
+            ? ensureFlight({
+                ...flight,
+                deadlines: ensureArray(flight.deadlines).filter((item) => item.id !== deadlineId),
+              })
+            : ensureFlight(flight),
+        ),
+      })),
+    )
+  }, [])
+
   const addHotel = useCallback((tripId, payload) => {
     setTrips((prev) =>
       updateTripInList(prev, tripId, (trip) => ({
@@ -816,9 +957,7 @@ export function AppProvider({ children }) {
     setTrips((prev) =>
       updateTripInList(prev, tripId, (trip) => ({
         ...trip,
-        hotels: trip.hotels.map((hotel) =>
-          hotel.id === hotelId ? ensureHotel({ ...hotel, ...payload }) : ensureHotel(hotel),
-        ),
+        hotels: trip.hotels.map((hotel) => (hotel.id === hotelId ? ensureHotel({ ...hotel, ...payload }) : ensureHotel(hotel))),
       })),
     )
   }, [])
@@ -828,6 +967,194 @@ export function AppProvider({ children }) {
       updateTripInList(prev, tripId, (trip) => ({
         ...trip,
         hotels: trip.hotels.filter((hotel) => hotel.id !== hotelId),
+      })),
+    )
+  }, [])
+
+  const addHotelDeadline = useCallback((tripId, hotelId, payload) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        hotels: trip.hotels.map((hotel) =>
+          hotel.id === hotelId
+            ? ensureHotel({
+                ...hotel,
+                deadlines: [...ensureArray(hotel.deadlines), { id: uid('deadline'), title: payload.title || '', date: payload.date || '', notes: payload.notes || '' }],
+              })
+            : ensureHotel(hotel),
+        ),
+      })),
+    )
+  }, [])
+
+  const deleteHotelDeadline = useCallback((tripId, hotelId, deadlineId) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        hotels: trip.hotels.map((hotel) =>
+          hotel.id === hotelId
+            ? ensureHotel({
+                ...hotel,
+                deadlines: ensureArray(hotel.deadlines).filter((item) => item.id !== deadlineId),
+              })
+            : ensureHotel(hotel),
+        ),
+      })),
+    )
+  }, [])
+
+  const addParkingReservation = useCallback((tripId, payload) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        parkingReservations: [...trip.parkingReservations, ensureParkingReservation({ ...payload, id: uid('park') })],
+      })),
+    )
+  }, [])
+
+  const deleteParkingReservation = useCallback((tripId, parkingId) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        parkingReservations: trip.parkingReservations.filter((item) => item.id !== parkingId),
+      })),
+    )
+  }, [])
+
+  const addCarRental = useCallback((tripId, payload) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        carRentals: [...trip.carRentals, ensureCarRental({ ...payload, id: uid('car') })],
+      })),
+    )
+  }, [])
+
+  const deleteCarRental = useCallback((tripId, carId) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        carRentals: trip.carRentals.filter((item) => item.id !== carId),
+      })),
+    )
+  }, [])
+
+  const addDiaryDay = useCallback((tripId, payload) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        travelDiary: {
+          ...trip.travelDiary,
+          days: [...ensureArray(trip.travelDiary?.days), ensureDiaryDay({ ...payload, id: uid('day') })],
+        },
+      })),
+    )
+  }, [])
+
+  const deleteDiaryDay = useCallback((tripId, dayId) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        travelDiary: {
+          ...trip.travelDiary,
+          days: ensureArray(trip.travelDiary?.days).filter((item) => item.id !== dayId),
+        },
+      })),
+    )
+  }, [])
+
+  const addDiaryPlace = useCallback((tripId, payload) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        travelDiary: {
+          ...trip.travelDiary,
+          places: [...ensureArray(trip.travelDiary?.places), ensureDiaryPlace({ ...payload, id: uid('place') })],
+        },
+      })),
+    )
+  }, [])
+
+  const deleteDiaryPlace = useCallback((tripId, placeId) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        travelDiary: {
+          ...trip.travelDiary,
+          places: ensureArray(trip.travelDiary?.places).filter((item) => item.id !== placeId),
+        },
+      })),
+    )
+  }, [])
+
+  const addDiaryMedia = useCallback((tripId, payload) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        travelDiary: {
+          ...trip.travelDiary,
+          mediaLinks: [...ensureArray(trip.travelDiary?.mediaLinks), ensureDiaryMedia({ ...payload, id: uid('media') })],
+        },
+      })),
+    )
+  }, [])
+
+  const deleteDiaryMedia = useCallback((tripId, mediaId) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        travelDiary: {
+          ...trip.travelDiary,
+          mediaLinks: ensureArray(trip.travelDiary?.mediaLinks).filter((item) => item.id !== mediaId),
+        },
+      })),
+    )
+  }, [])
+
+  const toggleChecklistItem = useCallback((tripId, groupId, itemId) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        packingChecklist: ensureArray(trip.packingChecklist).map((group) =>
+          group.id === groupId
+            ? ensureChecklistGroup({
+                ...group,
+                items: ensureArray(group.items).map((item) => (item.id === itemId ? { ...item, done: !item.done } : item)),
+              })
+            : ensureChecklistGroup(group),
+        ),
+      })),
+    )
+  }, [])
+
+  const addChecklistItem = useCallback((tripId, groupId, label) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        packingChecklist: ensureArray(trip.packingChecklist).map((group) =>
+          group.id === groupId
+            ? ensureChecklistGroup({
+                ...group,
+                items: [...ensureArray(group.items), { id: uid('chk'), label, done: false }],
+              })
+            : ensureChecklistGroup(group),
+        ),
+      })),
+    )
+  }, [])
+
+  const removeChecklistItem = useCallback((tripId, groupId, itemId) => {
+    setTrips((prev) =>
+      updateTripInList(prev, tripId, (trip) => ({
+        ...trip,
+        packingChecklist: ensureArray(trip.packingChecklist).map((group) =>
+          group.id === groupId
+            ? ensureChecklistGroup({
+                ...group,
+                items: ensureArray(group.items).filter((item) => item.id !== itemId),
+              })
+            : ensureChecklistGroup(group),
+        ),
       })),
     )
   }, [])
@@ -848,13 +1175,29 @@ export function AppProvider({ children }) {
       updateFlight,
       deleteFlight,
       invertFlightRoute,
+      addFlightBaggage,
+      deleteFlightBaggage,
+      addFlightDeadline,
+      deleteFlightDeadline,
       addHotel,
       updateHotel,
       deleteHotel,
+      addHotelDeadline,
+      deleteHotelDeadline,
+      addParkingReservation,
+      deleteParkingReservation,
+      addCarRental,
+      deleteCarRental,
+      addDiaryDay,
+      deleteDiaryDay,
+      addDiaryPlace,
+      deleteDiaryPlace,
+      addDiaryMedia,
+      deleteDiaryMedia,
+      toggleChecklistItem,
+      addChecklistItem,
+      removeChecklistItem,
       updateFamilyMember,
-      createMedicationForMember,
-      updateMemberMedication,
-      deleteMemberMedication,
       addMedicationToMember,
       updateMedicationFromMember,
       deleteMedicationFromMember,
@@ -876,13 +1219,29 @@ export function AppProvider({ children }) {
       updateFlight,
       deleteFlight,
       invertFlightRoute,
+      addFlightBaggage,
+      deleteFlightBaggage,
+      addFlightDeadline,
+      deleteFlightDeadline,
       addHotel,
       updateHotel,
       deleteHotel,
+      addHotelDeadline,
+      deleteHotelDeadline,
+      addParkingReservation,
+      deleteParkingReservation,
+      addCarRental,
+      deleteCarRental,
+      addDiaryDay,
+      deleteDiaryDay,
+      addDiaryPlace,
+      deleteDiaryPlace,
+      addDiaryMedia,
+      deleteDiaryMedia,
+      toggleChecklistItem,
+      addChecklistItem,
+      removeChecklistItem,
       updateFamilyMember,
-      createMedicationForMember,
-      updateMemberMedication,
-      deleteMemberMedication,
       addMedicationToMember,
       updateMedicationFromMember,
       deleteMedicationFromMember,
