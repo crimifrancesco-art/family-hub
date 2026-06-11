@@ -303,6 +303,12 @@ export default function ViaggiPage() {
   const selectedTrip = useMemo(() => trips.find((trip) => trip.id === selectedTripId) || trips[0] || null, [trips, selectedTripId])
 
   useEffect(() => {
+    if (selectedTrip?.id && selectedTripId !== selectedTrip.id) {
+      setSelectedTripId(selectedTrip.id)
+    }
+  }, [selectedTrip?.id, selectedTripId])
+
+  useEffect(() => {
     if (!selectedTrip) {
       setSelectedTripEdit(EMPTY_SELECTED_TRIP_EDIT)
       return
@@ -315,7 +321,7 @@ export default function ViaggiPage() {
       dateTo: selectedTrip.dateTo || '',
       notes: selectedTrip.notes || '',
     })
-  }, [selectedTrip?.id])
+  }, [selectedTrip?.id, selectedTrip?.name, selectedTrip?.status, selectedTrip?.dateFrom, selectedTrip?.dateTo, selectedTrip?.notes])
 
   useEffect(() => {
     if (!selectedTrip) {
@@ -355,7 +361,7 @@ export default function ViaggiPage() {
       }
     })
     setHotelDrafts(nextHotelDrafts)
-  }, [selectedTrip?.id])
+  }, [selectedTrip])
 
   const tripStats = useMemo(() => {
     const totalTripDeadlines = trips.reduce((sum, trip) => sum + countTripDeadlines(trip), 0)
@@ -564,15 +570,20 @@ export default function ViaggiPage() {
     e.preventDefault()
     if (!selectedTrip) return
 
+    const safeDate = dayForm.date || selectedTrip.dateFrom || ''
+    const safeTitle = dayForm.title.trim()
+    const safeNotes = dayForm.notes.trim()
+
     const errors = makeRequiredErrors([
-      { key: 'title', value: dayForm.title, message: 'Inserisci il titolo del giorno.' },
+      { key: 'title', value: safeTitle, message: 'Inserisci il titolo del giorno.' },
     ])
     setDayErrors(errors)
     if (Object.keys(errors).length) return
 
     addDiaryDay(selectedTrip.id, {
-      ...dayForm,
-      title: dayForm.title.trim(),
+      date: safeDate,
+      title: safeTitle,
+      notes: safeNotes,
     })
 
     setDayForm(EMPTY_DAY_FORM)
