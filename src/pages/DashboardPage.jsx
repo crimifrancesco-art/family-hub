@@ -1,430 +1,829 @@
 import { useMemo } from 'react'
 import { useAppContext } from '../context/AppContext'
 
-function fmtDate(value) {
+function ensureArray(value) {
+  return Array.isArray(value) ? value : []
+}
+
+function formatDate(value) {
   if (!value) return '—'
   const parts = String(value).split('-')
   if (parts.length !== 3) return value
   return `${parts[2]}/${parts[1]}/${parts[0]}`
 }
 
-function sortByDate(items, selector) {
-  return [...items].sort((a, b) => {
-    const av = selector(a) || '9999-99-99'
-    const bv = selector(b) || '9999-99-99'
-    return av.localeCompare(bv)
-  })
-}
-
-function daysBetween(from, to = new Date()) {
-  if (!from) return null
-  const start = new Date(from)
-  const end = new Date(to)
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
-  const diff = start.getTime() - end.getTime()
+function daysUntil(value) {
+  if (!value) return null
+  const target = new Date(`${value}T09:00:00`)
+  if (Number.isNaN(target.getTime())) return null
+  const now = new Date()
+  const diff = target.getTime() - now.getTime()
   return Math.ceil(diff / (1000 * 60 * 60 * 24))
 }
 
-function tripStatusLabel(status) {
-  const map = {
-    planning: 'Pianificato',
-    incoming: 'In arrivo',
-    ongoing: 'In corso',
-    done: 'Concluso',
-    cancelled: 'Annullato',
-  }
-  return map[status] || status || '—'
+function visitStatusLabel(days) {
+  if (days === null) return 'Senza data'
+  if (days < 0) return 'Passata'
+  if (days === 0) return 'Oggi'
+  if (days === 1) return 'Domani'
+  if (days <= 7) return `Tra ${days} gg`
+  return `Tra ${days} gg`
 }
 
-function tripStatusClass(status) {
-  if (status === 'incoming' || status === 'ongoing') return 'success'
-  if (status === 'cancelled') return 'danger'
-  if (status === 'planning') return 'warning'
-  return ''
+function tripStatusLabel(days) {
+  if (days === null) return 'Da pianificare'
+  if (days < 0) return 'Concluso'
+  if (days === 0) return 'In partenza'
+  if (days === 1) return 'Domani'
+  return `Tra ${days} gg`
 }
 
-function EmptyBox({ text }) {
-  return <div className="empty">{text}</div>
+function compactMemberName(member) {
+  return member?.name || member?.role || member?.initials || 'Membro'
 }
 
-function healthRows(healthEntries = [], familyMembers = []) {
-  return sortByDate(
-    healthEntries
-      .filter((row) => row.date)
-      .map((row) => {
-        const member = familyMembers.find((item) => item.id === row.memberId)
-        return {
-          id: row.id,
-          member,
-          type: row.type || 'Visita',
-          date: row.date,
-          doctor: row.doctor || '',
-          location: row.location || '',
-          note: row.notes || '',
-        }
-      }),
-    (row) => row.date,
+function StatCard({ label, value, note, tone = 'default' }) {
+  return (
+    <div className={`dash-stat dash-stat-${tone}`}>
+      <div className="dash-stat-label">{label}</div>
+      <div className="dash-stat-value">{value}</div>
+      <div className="dash-stat-note">{note}</div>
+    </div>
   )
 }
 
-function archiveRows(archiveDocs = []) {
-  return sortByDate(
-    archiveDocs
-      .filter((row) => row.expiryDate)
-      .map((row) => ({
-        id: row.id,
-        category: row.category || 'Documento',
-        owner: row.owner || '',
-        title: row.title || '',
-        expiryDate: row.expiryDate,
-      })),
-    (row) => row.expiryDate,
+function SectionTitle({ title, subtitle, action }) {
+  return (
+    <div className="dash-section-head">
+      <div>
+        <div className="dash-section-title">{title}</div>
+        {subtitle ? <div className="dash-section-subtitle">{subtitle}</div> : null}
+      </div>
+      {action ? <div>{action}</div> : null}
+    </div>
   )
-}
-
-function tripRows(trips = []) {
-  const rows = []
-
-  trips.forEach((trip) => {
-    if (trip.dateFrom) {
-      rows.push({
-        id: `${trip.id}-trip-start`,
-        area: 'Viaggi',
-        title: trip.name || 'Viaggio',
-        personOrContext: trip.persons?.length ? 'Famiglia' : '—',
-        date: trip.dateFrom,
-        note: 'Partenza',
-        status: trip.status,
-      })
-    }
-
-    ;(trip.flights || []).forEach((flight) => {
-      if (flight.date) {
-        rows.push({
-          id: `${trip.id}-flight-${flight.id}`,
-          area: 'Viaggi',
-          title: flight.company || 'Volo',
-          personOrContext: trip.name || 'Viaggio',
-          date: flight.date,
-          note: `${flight.from || '—'} → ${flight.to || '—'}`,
-          status: trip.status,
-        })
-      }
-
-      ;(flight.deadlines || []).forEach((deadline) => {
-        if (deadline.date) {
-          rows.push({
-            id: `${trip.id}-flight-deadline-${deadline.id}`,
-            area: 'Viaggi',
-            title: deadline.title || 'Scadenza volo',
-            personOrContext: flight.company || trip.name || 'Viaggio',
-            date: deadline.date,
-            note: deadline.notes || 'Volo',
-            status: trip.status,
-          })
-        }
-      })
-    })
-
-    ;(trip.hotels || []).forEach((hotel) => {
-      if (hotel.checkIn) {
-        rows.push({
-          id: `${trip.id}-hotel-${hotel.id}`,
-          area: 'Viaggi',
-          title: hotel.name || 'Hotel',
-          personOrContext: trip.name || 'Viaggio',
-          date: hotel.checkIn,
-          note: 'Check-in',
-          status: trip.status,
-        })
-      }
-
-      if (hotel.cancellationDate) {
-        rows.push({
-          id: `${trip.id}-hotel-cancel-${hotel.id}`,
-          area: 'Viaggi',
-          title: hotel.name || 'Hotel',
-          personOrContext: trip.name || 'Viaggio',
-          date: hotel.cancellationDate,
-          note: 'Cancellazione',
-          status: trip.status,
-        })
-      }
-
-      ;(hotel.deadlines || []).forEach((deadline) => {
-        if (deadline.date) {
-          rows.push({
-            id: `${trip.id}-hotel-deadline-${deadline.id}`,
-            area: 'Viaggi',
-            title: deadline.title || 'Scadenza hotel',
-            personOrContext: hotel.name || trip.name || 'Viaggio',
-            date: deadline.date,
-            note: deadline.notes || 'Hotel',
-            status: trip.status,
-          })
-        }
-      })
-    })
-
-    ;(trip.parkingReservations || []).forEach((parking) => {
-      if (parking.dateFrom) {
-        rows.push({
-          id: `${trip.id}-parking-${parking.id}`,
-          area: 'Viaggi',
-          title: parking.name || 'Parcheggio',
-          personOrContext: trip.name || 'Viaggio',
-          date: parking.dateFrom,
-          note: 'Parcheggio',
-          status: trip.status,
-        })
-      }
-    })
-
-    ;(trip.carRentals || []).forEach((car) => {
-      if (car.pickupDate) {
-        rows.push({
-          id: `${trip.id}-car-${car.id}`,
-          area: 'Viaggi',
-          title: car.company || 'Auto a noleggio',
-          personOrContext: trip.name || 'Viaggio',
-          date: car.pickupDate,
-          note: 'Ritiro auto',
-          status: trip.status,
-        })
-      }
-    })
-
-    ;(trip.travelDiary?.days || []).forEach((day) => {
-      if (day.date) {
-        rows.push({
-          id: `${trip.id}-day-${day.id}`,
-          area: 'Viaggi',
-          title: day.title || 'Giorno di viaggio',
-          personOrContext: trip.name || 'Viaggio',
-          date: day.date,
-          note: 'Diario',
-          status: trip.status,
-        })
-      }
-    })
-  })
-
-  return sortByDate(rows, (row) => row.date)
-}
-
-function statusBadgeLabel(date) {
-  const days = daysBetween(date)
-  if (days === null) return '—'
-  if (days < 0) return 'Scaduto'
-  return `${days} gg`
-}
-
-function statusBadgeClass(date) {
-  const days = daysBetween(date)
-  if (days === null) return 'muted'
-  if (days < 0) return 'danger'
-  if (days <= 30) return 'success'
-  if (days <= 90) return 'warning'
-  return 'muted'
 }
 
 export default function DashboardPage() {
-  const {
-    familyMembers,
-    archiveDocs,
-    healthEntries,
-    trips,
-    loadingData,
-    syncError,
-  } = useAppContext()
+  const { familyMembers, healthTables, archiveItems, trips, loadingData, syncError } = useAppContext()
 
-  const healthUpcoming = useMemo(() => healthRows(healthEntries, familyMembers).slice(0, 5), [healthEntries, familyMembers])
-  const archiveUpcoming = useMemo(() => archiveRows(archiveDocs).slice(0, 5), [archiveDocs])
-  const tripUpcoming = useMemo(() => tripRows(trips), [trips])
+  const specialistVisits = ensureArray(healthTables?.specialistVisits)
+  const visitTherapies = ensureArray(healthTables?.visitTherapies)
+
+  const dashboardData = useMemo(() => {
+    const members = ensureArray(familyMembers)
+    const archive = ensureArray(archiveItems)
+    const travelList = ensureArray(trips)
+
+    const upcomingVisits = specialistVisits
+      .map((visit) => {
+        const member = members.find((m) => m.id === visit.memberId)
+        const diff = daysUntil(visit.date)
+        return {
+          ...visit,
+          memberName: compactMemberName(member),
+          days: diff,
+        }
+      })
+      .filter((visit) => visit.days === null || visit.days >= 0)
+      .sort((a, b) => {
+        const left = `${a.date || '9999-99-99'}_${a.time || '99:99'}`
+        const right = `${b.date || '9999-99-99'}_${b.time || '99:99'}`
+        return left.localeCompare(right)
+      })
+
+    const recentVisits = specialistVisits
+      .map((visit) => {
+        const member = members.find((m) => m.id === visit.memberId)
+        return {
+          ...visit,
+          memberName: compactMemberName(member),
+        }
+      })
+      .sort((a, b) => {
+        const left = `${b.date || ''}_${b.time || ''}`
+        const right = `${a.date || ''}_${a.time || ''}`
+        return left.localeCompare(right)
+      })
+      .slice(0, 5)
+
+    const therapiesByMember = members.map((member) => {
+      const memberTherapies = visitTherapies.filter((therapy) => therapy.memberId === member.id)
+      return {
+        id: member.id,
+        name: compactMemberName(member),
+        count: memberTherapies.length,
+      }
+    })
+
+    const medicationsCount = members.reduce((acc, member) => {
+      return acc + ensureArray(member.medications).length
+    }, 0)
+
+    const nextTrip = travelList
+      .map((trip) => ({
+        ...trip,
+        days: daysUntil(trip.startDate || trip.dateFrom || trip.date),
+      }))
+      .filter((trip) => trip.days === null || trip.days >= 0)
+      .sort((a, b) => {
+        const left = `${a.startDate || a.dateFrom || a.date || '9999-99-99'}`
+        const right = `${b.startDate || b.dateFrom || b.date || '9999-99-99'}`
+        return left.localeCompare(right)
+      })[0]
+
+    const archiveRecent = archive
+      .slice()
+      .sort((a, b) => `${b.updatedAt || b.createdAt || ''}`.localeCompare(`${a.updatedAt || a.createdAt || ''}`))
+      .slice(0, 6)
+
+    return {
+      membersCount: members.length,
+      upcomingVisits,
+      recentVisits,
+      therapiesByMember,
+      medicationsCount,
+      nextTrip,
+      archiveRecent,
+      archiveCount: archive.length,
+      totalVisits: specialistVisits.length,
+      totalTherapies: visitTherapies.length,
+    }
+  }, [familyMembers, specialistVisits, visitTherapies, archiveItems, trips])
 
   if (loadingData) {
     return (
-      <div className="page-stack">
-        <section className="hero-card">
-          <div className="eyebrow">Dashboard</div>
-          <h1>Scadenze di famiglia</h1>
-          <p>Sto preparando i dati di famiglia, salute, archivio e viaggi.</p>
-        </section>
+      <div className="dash-page">
+        <div className="card">
+          <div className="page-title">Dashboard</div>
+          <p className="page-subtitle">Sto caricando la panoramica del Family Hub.</p>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="page-stack">
-      <section className="hero-card">
-        <div className="eyebrow">Dashboard</div>
-        <h1>Scadenze di famiglia</h1>
-        <p>Tutto in alto, leggibile e sincronizzato: membri, documenti, salute e viaggi in un solo colpo d’occhio.</p>
+    <div className="dash-page">
+      <style>{`
+        .dash-page {
+          display: grid;
+          gap: 14px;
+        }
 
-        {syncError ? <div className="app-status" style={{ marginTop: 14 }}>{syncError}</div> : null}
-      </section>
+        .dash-grid-main {
+          display: grid;
+          grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
+          gap: 14px;
+        }
 
-      <section className="card stack-card">
-        <div className="between">
-          <div>
-            <div className="card-title">Scadenze prossime</div>
-            <div className="muted">Solo scadenze viaggio con data, ordinate dal più vicino.</div>
-          </div>
-          <div className="badge badge-dash">{tripUpcoming.length} scadenze viaggio</div>
+        .dash-grid-half {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px;
+        }
+
+        .dash-stat-grid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 10px;
+        }
+
+        .dash-stat {
+          border-radius: 18px;
+          padding: 14px;
+          border: 1px solid rgba(120, 138, 164, 0.12);
+          background: rgba(255, 255, 255, 0.92);
+          display: grid;
+          gap: 6px;
+          min-height: 116px;
+        }
+
+        .dash-stat-primary {
+          background: linear-gradient(180deg, rgba(37, 99, 235, 0.10), rgba(255,255,255,0.96));
+          border-color: rgba(37, 99, 235, 0.16);
+        }
+
+        .dash-stat-success {
+          background: linear-gradient(180deg, rgba(22, 163, 74, 0.08), rgba(255,255,255,0.96));
+          border-color: rgba(22, 163, 74, 0.14);
+        }
+
+        .dash-stat-warning {
+          background: linear-gradient(180deg, rgba(245, 158, 11, 0.10), rgba(255,255,255,0.96));
+          border-color: rgba(245, 158, 11, 0.18);
+        }
+
+        .dash-stat-label {
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: var(--muted, #667085);
+          font-weight: 700;
+        }
+
+        .dash-stat-value {
+          font-size: 30px;
+          line-height: 1;
+          letter-spacing: -0.03em;
+          font-weight: 800;
+          color: #0f172a;
+        }
+
+        .dash-stat-note {
+          font-size: 12px;
+          line-height: 1.45;
+          color: var(--muted, #667085);
+        }
+
+        .dash-hero {
+          display: grid;
+          gap: 14px;
+        }
+
+        .dash-hero-card,
+        .dash-panel,
+        .dash-list-card {
+          border-radius: 22px;
+          border: 1px solid rgba(120, 138, 164, 0.12);
+          background: rgba(255, 255, 255, 0.92);
+          padding: 16px;
+        }
+
+        .dash-hero-card {
+          display: grid;
+          gap: 14px;
+        }
+
+        .dash-kicker {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          width: fit-content;
+          padding: 7px 10px;
+          border-radius: 999px;
+          background: rgba(37, 99, 235, 0.10);
+          color: #2563eb;
+          font-size: 11px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+        }
+
+        .dash-hero-title {
+          font-size: 28px;
+          line-height: 1.05;
+          letter-spacing: -0.03em;
+          font-weight: 800;
+          color: #0f172a;
+          margin: 0;
+        }
+
+        .dash-hero-subtitle {
+          font-size: 14px;
+          color: var(--muted, #667085);
+          line-height: 1.55;
+          max-width: 70ch;
+        }
+
+        .dash-strip {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 10px;
+        }
+
+        .dash-mini {
+          border-radius: 16px;
+          background: rgba(248, 250, 252, 0.96);
+          border: 1px solid rgba(120, 138, 164, 0.10);
+          padding: 12px;
+          display: grid;
+          gap: 4px;
+        }
+
+        .dash-mini-label {
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: var(--muted, #667085);
+          font-weight: 700;
+        }
+
+        .dash-mini-value {
+          font-size: 20px;
+          font-weight: 800;
+          line-height: 1.1;
+          color: #0f172a;
+        }
+
+        .dash-mini-note {
+          font-size: 12px;
+          color: var(--muted, #667085);
+          line-height: 1.45;
+        }
+
+        .dash-section-head {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 14px;
+        }
+
+        .dash-section-title {
+          font-size: 16px;
+          line-height: 1.2;
+          font-weight: 800;
+          color: #0f172a;
+        }
+
+        .dash-section-subtitle {
+          margin-top: 4px;
+          font-size: 12px;
+          color: var(--muted, #667085);
+          line-height: 1.45;
+        }
+
+        .dash-rows {
+          display: grid;
+          gap: 10px;
+        }
+
+        .dash-row {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 12px;
+          border-radius: 16px;
+          background: rgba(248, 250, 252, 0.94);
+          border: 1px solid rgba(120, 138, 164, 0.10);
+        }
+
+        .dash-row-left {
+          min-width: 0;
+          display: grid;
+          gap: 3px;
+        }
+
+        .dash-row-title {
+          font-size: 14px;
+          line-height: 1.25;
+          font-weight: 700;
+          color: #0f172a;
+        }
+
+        .dash-row-subtitle {
+          font-size: 12px;
+          line-height: 1.4;
+          color: var(--muted, #667085);
+        }
+
+        .dash-row-right {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+        }
+
+        .dash-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          min-height: 28px;
+          padding: 5px 10px;
+          border-radius: 999px;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          border: 1px solid transparent;
+          white-space: nowrap;
+        }
+
+        .dash-badge-neutral {
+          background: rgba(148, 163, 184, 0.10);
+          color: #475569;
+          border-color: rgba(148, 163, 184, 0.16);
+        }
+
+        .dash-badge-primary {
+          background: rgba(37, 99, 235, 0.10);
+          color: #2563eb;
+          border-color: rgba(37, 99, 235, 0.16);
+        }
+
+        .dash-badge-success {
+          background: rgba(22, 163, 74, 0.10);
+          color: #15803d;
+          border-color: rgba(22, 163, 74, 0.16);
+        }
+
+        .dash-badge-warning {
+          background: rgba(245, 158, 11, 0.10);
+          color: #b45309;
+          border-color: rgba(245, 158, 11, 0.18);
+        }
+
+        .dash-badge-danger {
+          background: rgba(220, 38, 38, 0.10);
+          color: #b91c1c;
+          border-color: rgba(220, 38, 38, 0.16);
+        }
+
+        .dash-member-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+        }
+
+        .dash-member-card {
+          border-radius: 16px;
+          padding: 12px;
+          background: rgba(248, 250, 252, 0.95);
+          border: 1px solid rgba(120, 138, 164, 0.10);
+          display: grid;
+          gap: 6px;
+        }
+
+        .dash-member-name {
+          font-size: 14px;
+          font-weight: 700;
+          color: #0f172a;
+        }
+
+        .dash-member-count {
+          font-size: 22px;
+          line-height: 1;
+          font-weight: 800;
+          color: #0f172a;
+        }
+
+        .dash-member-note {
+          font-size: 12px;
+          color: var(--muted, #667085);
+        }
+
+        .dash-empty {
+          border-radius: 16px;
+          padding: 14px;
+          background: rgba(248, 250, 252, 0.86);
+          border: 1px dashed rgba(120, 138, 164, 0.18);
+          color: var(--muted, #667085);
+          font-size: 13px;
+          line-height: 1.5;
+        }
+
+        .dash-alert {
+          border-radius: 16px;
+          padding: 12px 14px;
+          border: 1px solid rgba(220, 38, 38, 0.14);
+          background: rgba(220, 38, 38, 0.06);
+          color: #991b1b;
+          font-size: 13px;
+          line-height: 1.5;
+        }
+
+        @media (max-width: 1100px) {
+          .dash-grid-main,
+          .dash-grid-half,
+          .dash-stat-grid,
+          .dash-strip,
+          .dash-member-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+
+      {syncError ? (
+        <div className="dash-alert">
+          Errore di sincronizzazione: {String(syncError)}
         </div>
+      ) : null}
 
-        {tripUpcoming.length ? (
-          <div className="drive-table-wrap">
-            <table className="drive-table">
-              <thead>
-                <tr>
-                  <th>Area</th>
-                  <th>Titolo</th>
-                  <th>Persona / Contesto</th>
-                  <th>Data</th>
-                  <th>Nota</th>
-                  <th>Stato</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tripUpcoming.map((row) => (
-                  <tr key={row.id}>
-                    <td>{row.area}</td>
-                    <td>{row.title}</td>
-                    <td>{row.personOrContext}</td>
-                    <td>{fmtDate(row.date)}</td>
-                    <td>{row.note || '—'}</td>
-                    <td>
-                      <span className={`badge badge-${statusBadgeClass(row.date)}`}>
-                        {statusBadgeLabel(row.date)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <EmptyBox text="Nessuna scadenza viaggio disponibile." />
-        )}
-      </section>
+      <div className="dash-stat-grid">
+        <StatCard
+          label="Familiari"
+          value={dashboardData.membersCount}
+          note="Persone gestite nel Family Hub"
+          tone="primary"
+        />
+        <StatCard
+          label="Visite"
+          value={dashboardData.totalVisits}
+          note="Storico visite registrate"
+        />
+        <StatCard
+          label="Terapie"
+          value={dashboardData.totalTherapies}
+          note="Terapie collegate alle visite"
+          tone="success"
+        />
+        <StatCard
+          label="Documenti"
+          value={dashboardData.archiveCount}
+          note="Elementi presenti in archivio"
+          tone="warning"
+        />
+      </div>
 
-      <section className="grid-cards cols-2">
-        <article className="card stack-card">
-          <div className="between">
+      <div className="dash-grid-main">
+        <div className="dash-hero">
+          <div className="dash-hero-card">
+            <div className="dash-kicker">Panoramica operativa</div>
+
             <div>
-              <div className="card-title">Salute</div>
-              <div className="muted">Visite e controlli con data.</div>
+              <h2 className="dash-hero-title">Tutto quello che conta, subito visibile.</h2>
+              <div className="dash-hero-subtitle">
+                La dashboard riassume salute, archivio e viaggi in una vista unica, con
+                priorità alle informazioni imminenti e ai dati che richiedono attenzione.
+              </div>
             </div>
-            <div className="badge badge-success">{healthUpcoming.length} elementi</div>
-          </div>
 
-          {healthUpcoming.length ? (
-            <div className="drive-table-wrap">
-              <table className="drive-table">
-                <thead>
-                  <tr>
-                    <th>Membro</th>
-                    <th>Tipo</th>
-                    <th>Data</th>
-                    <th>Medico</th>
-                    <th>Luogo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {healthUpcoming.map((row) => (
-                    <tr key={row.id}>
-                      <td>{row.member?.initials || row.member?.name || '—'}</td>
-                      <td>{row.type || '—'}</td>
-                      <td>{fmtDate(row.date)}</td>
-                      <td>{row.doctor || '—'}</td>
-                      <td>{row.location || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <EmptyBox text="Nessuna visita o terapia con data disponibile." />
-          )}
-        </article>
-
-        <article className="card stack-card">
-          <div className="between">
-            <div>
-              <div className="card-title">Archivio</div>
-              <div className="muted">Documenti con scadenza registrata.</div>
-            </div>
-            <div className="badge badge-warning">{archiveUpcoming.length} elementi</div>
-          </div>
-
-          {archiveUpcoming.length ? (
-            <div className="drive-table-wrap">
-              <table className="drive-table">
-                <thead>
-                  <tr>
-                    <th>Categoria</th>
-                    <th>Intestatario</th>
-                    <th>Titolo</th>
-                    <th>Scadenza</th>
-                    <th>Mancano</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {archiveUpcoming.map((row) => {
-                    const days = daysBetween(row.expiryDate)
-                    return (
-                      <tr key={row.id}>
-                        <td>{row.category || '—'}</td>
-                        <td>{row.owner || '—'}</td>
-                        <td>{row.title || '—'}</td>
-                        <td>{fmtDate(row.expiryDate)}</td>
-                        <td>{days === null ? '—' : days >= 0 ? `${days} giorni` : 'scaduto'}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <EmptyBox text="Nessun documento con scadenza disponibile." />
-          )}
-        </article>
-      </section>
-
-      <section className="card stack-card">
-        <div className="between">
-          <div>
-            <div className="card-title">Viaggi attivi</div>
-            <div className="muted">Riepilogo sintetico dei viaggi presenti in archivio.</div>
-          </div>
-          <div className="badge badge-dash">{trips.length} viaggi</div>
-        </div>
-
-        {trips.length ? (
-          <div className="timeline-list">
-            {trips.map((trip) => (
-              <div key={trip.id} className="timeline-item">
-                <div className="between">
-                  <div>
-                    <div className="strong">{trip.name || 'Viaggio'}</div>
-                    <div className="small muted">
-                      {trip.dateFrom ? fmtDate(trip.dateFrom) : 'Data non disponibile'}
-                      {trip.dateTo ? ` → ${fmtDate(trip.dateTo)}` : ''}
-                    </div>
-                    <div className="small muted">
-                      {(trip.persons || []).length} partecipanti · {(trip.flights || []).length} voli · {(trip.hotels || []).length} hotel
-                    </div>
-                  </div>
-                  <span className={`badge badge-${tripStatusClass(trip.status)}`}>{tripStatusLabel(trip.status)}</span>
+            <div className="dash-strip">
+              <div className="dash-mini">
+                <div className="dash-mini-label">Prossima visita</div>
+                <div className="dash-mini-value">
+                  {dashboardData.upcomingVisits[0]
+                    ? formatDate(dashboardData.upcomingVisits[0].date)
+                    : '—'}
+                </div>
+                <div className="dash-mini-note">
+                  {dashboardData.upcomingVisits[0]
+                    ? `${dashboardData.upcomingVisits[0].title} · ${dashboardData.upcomingVisits[0].memberName}`
+                    : 'Nessuna visita pianificata'}
                 </div>
               </div>
-            ))}
+
+              <div className="dash-mini">
+                <div className="dash-mini-label">Farmaci personali</div>
+                <div className="dash-mini-value">{dashboardData.medicationsCount}</div>
+                <div className="dash-mini-note">
+                  Terapie continuative inserite nei profili famiglia
+                </div>
+              </div>
+
+              <div className="dash-mini">
+                <div className="dash-mini-label">Prossimo viaggio</div>
+                <div className="dash-mini-value">
+                  {dashboardData.nextTrip
+                    ? formatDate(
+                        dashboardData.nextTrip.startDate ||
+                          dashboardData.nextTrip.dateFrom ||
+                          dashboardData.nextTrip.date,
+                      )
+                    : '—'}
+                </div>
+                <div className="dash-mini-note">
+                  {dashboardData.nextTrip
+                    ? dashboardData.nextTrip.title ||
+                      dashboardData.nextTrip.destination ||
+                      'Viaggio pianificato'
+                    : 'Nessun viaggio imminente'}
+                </div>
+              </div>
+            </div>
           </div>
-        ) : (
-          <EmptyBox text="Nessun viaggio presente." />
-        )}
-      </section>
+
+          <div className="dash-panel">
+            <SectionTitle
+              title="Visite imminenti"
+              subtitle="Le prossime scadenze sanitarie da tenere d’occhio."
+            />
+
+            {dashboardData.upcomingVisits.length ? (
+              <div className="dash-rows">
+                {dashboardData.upcomingVisits.slice(0, 5).map((visit) => {
+                  const tone =
+                    visit.days === null
+                      ? 'neutral'
+                      : visit.days <= 1
+                        ? 'danger'
+                        : visit.days <= 7
+                          ? 'warning'
+                          : 'primary'
+
+                  return (
+                    <div key={visit.id} className="dash-row">
+                      <div className="dash-row-left">
+                        <div className="dash-row-title">{visit.title || 'Visita'}</div>
+                        <div className="dash-row-subtitle">
+                          {visit.memberName} · {visit.specialty || 'Specialità'} · {formatDate(visit.date)}
+                          {visit.time ? ` · ${visit.time}` : ''}
+                        </div>
+                      </div>
+
+                      <div className="dash-row-right">
+                        <span className={`dash-badge dash-badge-${tone}`}>
+                          {visitStatusLabel(visit.days)}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="dash-empty">Nessuna visita futura disponibile.</div>
+            )}
+          </div>
+        </div>
+
+        <div className="dash-list-card">
+          <SectionTitle
+            title="Focus rapido"
+            subtitle="Stato sintetico delle aree più utili."
+          />
+
+          <div className="dash-rows">
+            <div className="dash-row">
+              <div className="dash-row-left">
+                <div className="dash-row-title">Archivio condiviso</div>
+                <div className="dash-row-subtitle">
+                  Materiali salvati e pronti da recuperare al bisogno
+                </div>
+              </div>
+              <div className="dash-row-right">
+                <span className="dash-badge dash-badge-primary">{dashboardData.archiveCount}</span>
+              </div>
+            </div>
+
+            <div className="dash-row">
+              <div className="dash-row-left">
+                <div className="dash-row-title">Terapie attive / storiche</div>
+                <div className="dash-row-subtitle">
+                  Numero totale di terapie registrate nel sistema
+                </div>
+              </div>
+              <div className="dash-row-right">
+                <span className="dash-badge dash-badge-success">{dashboardData.totalTherapies}</span>
+              </div>
+            </div>
+
+            <div className="dash-row">
+              <div className="dash-row-left">
+                <div className="dash-row-title">Farmaci personali</div>
+                <div className="dash-row-subtitle">
+                  Farmaci associati direttamente ai profili familiari
+                </div>
+              </div>
+              <div className="dash-row-right">
+                <span className="dash-badge dash-badge-warning">{dashboardData.medicationsCount}</span>
+              </div>
+            </div>
+
+            <div className="dash-row">
+              <div className="dash-row-left">
+                <div className="dash-row-title">Viaggio più vicino</div>
+                <div className="dash-row-subtitle">
+                  Primo itinerario pianificato in ordine temporale
+                </div>
+              </div>
+              <div className="dash-row-right">
+                <span className="dash-badge dash-badge-neutral">
+                  {dashboardData.nextTrip
+                    ? tripStatusLabel(dashboardData.nextTrip.days)
+                    : 'Nessuno'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="dash-grid-half">
+        <div className="dash-panel">
+          <SectionTitle
+            title="Terapie per familiare"
+            subtitle="Distribuzione semplice per capire chi ha più elementi attivi o storici."
+          />
+
+          {dashboardData.therapiesByMember.length ? (
+            <div className="dash-member-grid">
+              {dashboardData.therapiesByMember.map((item) => (
+                <div key={item.id} className="dash-member-card">
+                  <div className="dash-member-name">{item.name}</div>
+                  <div className="dash-member-count">{item.count}</div>
+                  <div className="dash-member-note">Terapie registrate</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="dash-empty">Nessun familiare disponibile.</div>
+          )}
+        </div>
+
+        <div className="dash-panel">
+          <SectionTitle
+            title="Archivio recente"
+            subtitle="Ultimi elementi aggiornati o creati."
+          />
+
+          {dashboardData.archiveRecent.length ? (
+            <div className="dash-rows">
+              {dashboardData.archiveRecent.map((item, index) => (
+                <div key={item.id || `${item.title}_${index}`} className="dash-row">
+                  <div className="dash-row-left">
+                    <div className="dash-row-title">
+                      {item.title || item.name || item.label || 'Documento'}
+                    </div>
+                    <div className="dash-row-subtitle">
+                      {(item.category || item.type || 'Archivio')} ·{' '}
+                      {formatDate(item.updatedAt || item.createdAt || item.date)}
+                    </div>
+                  </div>
+
+                  <div className="dash-row-right">
+                    <span className="dash-badge dash-badge-neutral">
+                      {item.status || item.folder || 'Salvato'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="dash-empty">L’archivio è ancora vuoto.</div>
+          )}
+        </div>
+      </div>
+
+      <div className="dash-grid-half">
+        <div className="dash-panel">
+          <SectionTitle
+            title="Storico visite"
+            subtitle="Le ultime visite registrate, anche se già passate."
+          />
+
+          {dashboardData.recentVisits.length ? (
+            <div className="dash-rows">
+              {dashboardData.recentVisits.map((visit) => (
+                <div key={visit.id} className="dash-row">
+                  <div className="dash-row-left">
+                    <div className="dash-row-title">{visit.title || 'Visita'}</div>
+                    <div className="dash-row-subtitle">
+                      {visit.memberName} · {visit.specialty || 'Specialità'} · {formatDate(visit.date)}
+                    </div>
+                  </div>
+
+                  <div className="dash-row-right">
+                    <span className="dash-badge dash-badge-neutral">
+                      {visit.status || 'Registrata'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="dash-empty">Nessuna visita registrata.</div>
+          )}
+        </div>
+
+        <div className="dash-panel">
+          <SectionTitle
+            title="Viaggi"
+            subtitle="Vista rapida sul prossimo spostamento pianificato."
+          />
+
+          {dashboardData.nextTrip ? (
+            <div className="dash-rows">
+              <div className="dash-row">
+                <div className="dash-row-left">
+                  <div className="dash-row-title">
+                    {dashboardData.nextTrip.title ||
+                      dashboardData.nextTrip.destination ||
+                      'Viaggio'}
+                  </div>
+                  <div className="dash-row-subtitle">
+                    {formatDate(
+                      dashboardData.nextTrip.startDate ||
+                        dashboardData.nextTrip.dateFrom ||
+                        dashboardData.nextTrip.date,
+                    )}
+                    {dashboardData.nextTrip.endDate || dashboardData.nextTrip.dateTo
+                      ? ` → ${formatDate(
+                          dashboardData.nextTrip.endDate || dashboardData.nextTrip.dateTo,
+                        )}`
+                      : ''}
+                  </div>
+                </div>
+
+                <div className="dash-row-right">
+                  <span className="dash-badge dash-badge-primary">
+                    {tripStatusLabel(dashboardData.nextTrip.days)}
+                  </span>
+                </div>
+              </div>
+
+              {(dashboardData.nextTrip.notes || dashboardData.nextTrip.description) ? (
+                <div className="dash-empty">
+                  {dashboardData.nextTrip.notes || dashboardData.nextTrip.description}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="dash-empty">Nessun viaggio presente al momento.</div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
