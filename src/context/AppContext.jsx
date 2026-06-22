@@ -12,9 +12,7 @@ import { supabase } from "../lib/supabase";
 const AppContext = createContext(null);
 
 const uid = (prefix = "id") =>
-  `${prefix}_${Date.now().toString(36)}_${Math.random()
-    .toString(36)
-    .slice(2, 8)}`;
+  `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
 export const TRIP_STATUS_OPTIONS = [
   { value: "planning", label: "Pianificato" },
@@ -245,19 +243,26 @@ export const TRAVEL_CHECKLIST_TEMPLATE = [
 
 const DEFAULT_ARCHIVE_TABLES = {
   categories: [
-    { id: "cat_identity", name: "Identità", kind: "standard" },
-    { id: "cat_house", name: "Casa", kind: "standard" },
-    { id: "cat_auto", name: "Auto", kind: "standard" },
-    { id: "cat_work", name: "Lavoro", kind: "standard" },
-    { id: "cat_school", name: "Scuola", kind: "standard" },
-    { id: "cat_health", name: "Sanità", kind: "standard" },
-    { id: "cat_reference", name: "Documenti di riferimento", kind: "table" },
+    { id: "cat_identity", name: "Identità", kind: "standard", parentId: "", sortOrder: 0 },
+    { id: "cat_identity_cards", name: "Carte identità", kind: "standard", parentId: "cat_identity", sortOrder: 1 },
+    { id: "cat_passports", name: "Passaporti", kind: "standard", parentId: "cat_identity", sortOrder: 2 },
+
+    { id: "cat_house", name: "Casa", kind: "standard", parentId: "", sortOrder: 10 },
+    { id: "cat_auto", name: "Auto", kind: "standard", parentId: "", sortOrder: 20 },
+    { id: "cat_work", name: "Lavoro", kind: "standard", parentId: "", sortOrder: 30 },
+    { id: "cat_school", name: "Scuola", kind: "standard", parentId: "", sortOrder: 40 },
+
+    { id: "cat_health", name: "Sanità", kind: "standard", parentId: "", sortOrder: 50 },
+    { id: "cat_health_reports", name: "Referti", kind: "standard", parentId: "cat_health", sortOrder: 51 },
+    { id: "cat_health_prescriptions", name: "Prescrizioni", kind: "standard", parentId: "cat_health", sortOrder: 52 },
+
+    { id: "cat_reference", name: "Documenti di riferimento", kind: "table", parentId: "", sortOrder: 60 },
   ],
   documents: [
     {
       id: "doc_1",
-      category: "Identità",
-      categoryId: "cat_identity",
+      category: "Carte identità",
+      categoryId: "cat_identity_cards",
       owner: "Francesco",
       ownerId: "member_fc",
       title: "Carta identità",
@@ -292,12 +297,7 @@ const DEFAULT_TRIPS = [
     hotels: [],
     parkingReservations: [],
     carRentals: [],
-    travelDiary: {
-      days: [],
-      places: [],
-      mediaLinks: [],
-      notes: "",
-    },
+    travelDiary: { days: [], places: [], mediaLinks: [], notes: "" },
     packingChecklist: TRAVEL_CHECKLIST_TEMPLATE.map((group) => ({
       ...group,
       id: uid("grp"),
@@ -338,9 +338,11 @@ const ensureDriveLinks = (links = []) =>
     .filter((entry) => entry.url || entry.label);
 
 const ensureArchiveCategory = (row = {}) => ({
-  id: row.id || uid("cat"),
-  name: row.name || "Nuova categoria",
-  kind: row.kind || "standard",
+  id: row?.id || uid("cat"),
+  name: row?.name || "Nuova categoria",
+  kind: row?.kind || "standard",
+          parentId: row?.parentId || null,
+  sortOrder: Number(row?.sortOrder ?? 0),
 });
 
 const ensureMedication = (med = {}) => ({
@@ -548,9 +550,7 @@ const ensureTrip = (trip = {}) => ({
   persons: ensureArray(trip.persons),
   flights: ensureArray(trip.flights).map(ensureFlight),
   hotels: ensureArray(trip.hotels).map(ensureHotel),
-  parkingReservations: ensureArray(trip.parkingReservations).map(
-    ensureParkingReservation,
-  ),
+  parkingReservations: ensureArray(trip.parkingReservations).map(ensureParkingReservation),
   carRentals: ensureArray(trip.carRentals).map(ensureCarRental),
   travelDiary: {
     days: ensureArray(trip.travelDiary?.days).map(ensureDiaryDay),
@@ -596,9 +596,9 @@ const ensureFamilyMember = (member = {}) => ({
 function mergeById(defaultRows, currentRows, ensureFn) {
   const map = new Map();
   ensureArray(defaultRows).forEach((row) => map.set(row.id, ensureFn(row)));
-  ensureArray(currentRows).forEach((row) => {
-    map.set(row.id, ensureFn({ ...map.get(row.id), ...row }));
-  });
+  ensureArray(currentRows).forEach((row) =>
+    map.set(row.id, ensureFn({ ...map.get(row.id), ...row }))
+  );
   return Array.from(map.values());
 }
 
@@ -614,17 +614,17 @@ function normalizeState(raw) {
     familyMembers: mergeById(
       fallback.familyMembers,
       source.familyMembers,
-      ensureFamilyMember,
+      ensureFamilyMember
     ),
 
     archiveTables: {
       categories: mergeById(
         fallback.archiveTables.categories,
         source.archiveTables?.categories,
-        ensureArchiveCategory,
+        ensureArchiveCategory
       ),
       documents: ensureArray(
-        source.archiveTables?.documents ?? fallback.archiveTables.documents,
+        source.archiveTables?.documents ?? fallback.archiveTables.documents
       ).map((row) => ({
         id: row?.id || uid("doc"),
         category: row?.category || "",
@@ -640,7 +640,7 @@ function normalizeState(raw) {
         notes: row?.notes || "",
       })),
       warranties: ensureArray(
-        source.archiveTables?.warranties ?? fallback.archiveTables.warranties,
+        source.archiveTables?.warranties ?? fallback.archiveTables.warranties
       ).map((row) => ({
         id: row?.id || uid("war"),
         item: row?.item || "",
@@ -655,26 +655,23 @@ function normalizeState(raw) {
 
     healthTables: {
       specialistVisits: ensureArray(
-        source.healthTables?.specialistVisits ??
-          fallback.healthTables.specialistVisits,
+        source.healthTables?.specialistVisits ?? fallback.healthTables.specialistVisits
       ).map(ensureVisit),
       visitTherapies: ensureArray(
-        source.healthTables?.visitTherapies ??
-          fallback.healthTables.visitTherapies,
+        source.healthTables?.visitTherapies ?? fallback.healthTables.visitTherapies
       ).map(ensureVisitTherapy),
       therapyMedications: ensureArray(
-        source.healthTables?.therapyMedications ??
-          fallback.healthTables.therapyMedications,
+        source.healthTables?.therapyMedications ?? fallback.healthTables.therapyMedications
       ).map(ensureTherapyMedication),
       legacyAppointments: ensureArray(
         source.healthTables?.legacyAppointments ??
           source.healthTables?.appointments ??
-          [],
+          []
       ),
       legacyTherapies: ensureArray(
         source.healthTables?.legacyTherapies ??
           source.healthTables?.therapies ??
-          [],
+          []
       ),
     },
   };
@@ -686,7 +683,7 @@ function airlineUrl(name) {
 
 function updateTripInList(list, tripId, updater) {
   return list.map((trip) =>
-    trip.id === tripId ? ensureTrip(updater(ensureTrip(trip))) : ensureTrip(trip),
+    trip.id === tripId ? ensureTrip(updater(ensureTrip(trip))) : ensureTrip(trip)
   );
 }
 
@@ -720,29 +717,6 @@ export function AppProvider({ children }) {
   const isSavingRef = useRef(false);
   const bootingRef = useRef(false);
 
-  const clearLocalState = useCallback(() => {
-    const normalized = normalizeState(makeDefaultState());
-    setTrips(normalized.trips);
-    setFamilyMembers(normalized.familyMembers);
-    setArchiveTables(normalized.archiveTables);
-    setHealthTables(normalized.healthTables);
-    setLoadingData(false);
-    setSyncError("");
-    hasLoadedRef.current = false;
-    bootingRef.current = false;
-    lastSavedAtRef.current = "";
-    lastRemoteAppliedAtRef.current = "";
-    isSavingRef.current = false;
-    clearTimeout(saveTimerRef.current);
-  }, []);
-
-  const cleanupRealtimeChannel = useCallback(() => {
-    if (realtimeChannelRef.current) {
-      supabase.removeChannel(realtimeChannelRef.current);
-      realtimeChannelRef.current = null;
-    }
-  }, []);
-
   const hydrate = useCallback((payload) => {
     const normalized = normalizeState(payload);
     setTrips(normalized.trips);
@@ -761,21 +735,25 @@ export function AppProvider({ children }) {
   }, [trips, familyMembers, archiveTables, healthTables]);
 
   const loadRemoteState = useCallback(
-    async (currentUserId) => {
-      if (!currentUserId) {
+    async (currentUser) => {
+      const userId = currentUser?.id;
+      if (!userId) {
         hydrate(makeDefaultState());
+        setLoadingData(false);
+        setSyncError("");
         return;
       }
 
       const { data, error } = await supabase
         .from("app_state")
         .select("payload, updated_at")
-        .eq("user_id", currentUserId)
+        .eq("user_id", userId)
         .maybeSingle();
 
       if (error) {
         setSyncError(`Errore caricamento Supabase: ${error.message}`);
         hydrate(makeDefaultState());
+        setLoadingData(false);
         return;
       }
 
@@ -785,6 +763,7 @@ export function AppProvider({ children }) {
         lastSavedAtRef.current = data.updated_at || "";
         lastRemoteAppliedAtRef.current = data.updated_at || "";
         setSyncError("");
+        setLoadingData(false);
         return;
       }
 
@@ -794,40 +773,147 @@ export function AppProvider({ children }) {
       const nowIso = new Date().toISOString();
       const { error: insertError } = await supabase.from("app_state").upsert(
         {
-          user_id: currentUserId,
+          user_id: userId,
           payload: initial,
           updated_at: nowIso,
         },
-        { onConflict: "user_id" },
+        { onConflict: "user_id" }
       );
 
       if (insertError) {
         setSyncError(`Errore inizializzazione Supabase: ${insertError.message}`);
+        setLoadingData(false);
         return;
       }
 
       lastSavedAtRef.current = nowIso;
       lastRemoteAppliedAtRef.current = nowIso;
       setSyncError("");
+      setLoadingData(false);
     },
-    [hydrate],
+    [hydrate]
   );
 
-  const attachRealtimeChannel = useCallback(
-    (currentUserId) => {
-      if (!currentUserId) return;
+  const saveToSupabase = useCallback(async (payload, currentUser) => {
+    const userId = currentUser?.id;
+    if (!userId) return;
 
-      cleanupRealtimeChannel();
+    isSavingRef.current = true;
+
+    const nowIso = new Date().toISOString();
+    const { error } = await supabase.from("app_state").upsert(
+      {
+        user_id: userId,
+        payload: normalizeState(payload),
+        updated_at: nowIso,
+      },
+      { onConflict: "user_id" }
+    );
+
+    if (error) {
+      setSyncError(`Errore salvataggio Supabase: ${error.message}`);
+      isSavingRef.current = false;
+      return;
+    }
+
+    lastSavedAtRef.current = nowIso;
+    setSyncError("");
+    isSavingRef.current = false;
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const bootstrapAuth = async () => {
+      try {
+        const {
+          data: { session: currentSession },
+          error,
+        } = await supabase.auth.getSession();
+
+        if (!mounted) return;
+
+        if (error) {
+          setSyncError(`Errore autenticazione: ${error.message}`);
+        }
+
+        setSession(currentSession || null);
+        setUser(currentSession?.user || null);
+        setAuthReady(true);
+      } catch (error) {
+        if (!mounted) return;
+        setSession(null);
+        setUser(null);
+        setAuthReady(true);
+        setSyncError(error?.message || "Errore autenticazione.");
+      }
+    };
+
+    bootstrapAuth();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!mounted) return;
+      setSession(nextSession || null);
+      setUser(nextSession?.user || null);
+      setAuthReady(true);
+    });
+
+    return () => {
+      mounted = false;
+      subscription?.unsubscribe?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    clearTimeout(saveTimerRef.current);
+
+    if (realtimeChannelRef.current) {
+      supabase.removeChannel(realtimeChannelRef.current);
+      realtimeChannelRef.current = null;
+    }
+
+    hasLoadedRef.current = false;
+    lastSavedAtRef.current = "";
+    lastRemoteAppliedAtRef.current = "";
+
+    const boot = async () => {
+      if (!authReady) return;
+
+      bootingRef.current = true;
+      setSyncError("");
+      setLoadingData(true);
+
+      if (!session?.user) {
+        hydrate(makeDefaultState());
+        if (!mounted) return;
+        setLoadingData(false);
+        bootingRef.current = false;
+        hasLoadedRef.current = false;
+        return;
+      }
+
+      await loadRemoteState(session.user);
+
+      if (!mounted) return;
+
+      hasLoadedRef.current = true;
+      bootingRef.current = false;
+
+      const userId = session.user.id;
 
       realtimeChannelRef.current = supabase
-        .channel(`app_state_${currentUserId}`)
+        .channel(`app_state_${userId}`)
         .on(
           "postgres_changes",
           {
             event: "*",
             schema: "public",
             table: "app_state",
-            filter: `user_id=eq.${currentUserId}`,
+            filter: `user_id=eq.${userId}`,
           },
           (payload) => {
             const remotePayload = payload.new?.payload;
@@ -837,142 +923,63 @@ export function AppProvider({ children }) {
             if (bootingRef.current) return;
             if (isSavingRef.current) return;
             if (remoteUpdatedAt && remoteUpdatedAt === lastSavedAtRef.current) return;
-            if (
-              remoteUpdatedAt &&
-              remoteUpdatedAt === lastRemoteAppliedAtRef.current
-            )
-              return;
+            if (remoteUpdatedAt && remoteUpdatedAt === lastRemoteAppliedAtRef.current) return;
 
             lastRemoteAppliedAtRef.current = remoteUpdatedAt;
             hydrate(remotePayload);
             setSyncError("");
-          },
+          }
         )
         .subscribe();
-    },
-    [cleanupRealtimeChannel, hydrate],
-  );
-
-  const bootstrapForUser = useCallback(
-    async (currentUser) => {
-      const currentUserId = currentUser?.id || "";
-
-      cleanupRealtimeChannel();
-      clearTimeout(saveTimerRef.current);
-
-      if (!currentUserId) {
-        clearLocalState();
-        return;
-      }
-
-      bootingRef.current = true;
-      setLoadingData(true);
-      setSyncError("");
-      hasLoadedRef.current = false;
-
-      await loadRemoteState(currentUserId);
-
-      bootingRef.current = false;
-      hasLoadedRef.current = true;
-      setLoadingData(false);
-
-      attachRealtimeChannel(currentUserId);
-    },
-    [attachRealtimeChannel, cleanupRealtimeChannel, clearLocalState, loadRemoteState],
-  );
-
-  const saveToSupabase = useCallback(
-    async (payload) => {
-      if (!user?.id) return;
-
-      isSavingRef.current = true;
-
-      const nowIso = new Date().toISOString();
-      const { error } = await supabase.from("app_state").upsert(
-        {
-          user_id: user.id,
-          payload: normalizeState(payload),
-          updated_at: nowIso,
-        },
-        { onConflict: "user_id" },
-      );
-
-      if (error) {
-        setSyncError(`Errore salvataggio Supabase: ${error.message}`);
-        isSavingRef.current = false;
-        return;
-      }
-
-      lastSavedAtRef.current = nowIso;
-      setSyncError("");
-      isSavingRef.current = false;
-    },
-    [user],
-  );
-
-  const signOut = useCallback(async () => {
-    cleanupRealtimeChannel();
-    clearTimeout(saveTimerRef.current);
-    await supabase.auth.signOut();
-  }, [cleanupRealtimeChannel]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const initAuth = async () => {
-      const {
-        data: { session: initialSession },
-      } = await supabase.auth.getSession();
-
-      if (!mounted) return;
-
-      setSession(initialSession || null);
-      setUser(initialSession?.user || null);
-      setAuthReady(true);
-
-      await bootstrapForUser(initialSession?.user || null);
     };
 
-    initAuth();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
-      if (!mounted) return;
-
-      setSession(nextSession || null);
-      setUser(nextSession?.user || null);
-      setAuthReady(true);
-
-      await bootstrapForUser(nextSession?.user || null);
-    });
+    boot();
 
     return () => {
       mounted = false;
-      subscription?.unsubscribe();
       clearTimeout(saveTimerRef.current);
-      cleanupRealtimeChannel();
+      if (realtimeChannelRef.current) {
+        supabase.removeChannel(realtimeChannelRef.current);
+        realtimeChannelRef.current = null;
+      }
     };
-  }, [bootstrapForUser, cleanupRealtimeChannel]);
+  }, [authReady, session, hydrate, loadRemoteState]);
 
   const payloadForSave = useMemo(
-    () => normalizeState({ trips, familyMembers, archiveTables, healthTables }),
-    [trips, familyMembers, archiveTables, healthTables],
+    () =>
+      normalizeState({
+        trips,
+        familyMembers,
+        archiveTables,
+        healthTables,
+      }),
+    [trips, familyMembers, archiveTables, healthTables]
   );
 
   useEffect(() => {
-    if (!authReady) return;
-    if (!user?.id) return;
+    if (!authReady || !session?.user) return;
     if (!hasLoadedRef.current || bootingRef.current) return;
 
     clearTimeout(saveTimerRef.current);
 
     saveTimerRef.current = setTimeout(() => {
-      saveToSupabase(payloadForSave);
+      saveToSupabase(payloadForSave, session.user);
     }, 250);
 
     return () => clearTimeout(saveTimerRef.current);
-  }, [authReady, user, payloadForSave, saveToSupabase]);
+  }, [authReady, session, payloadForSave, saveToSupabase]);
+
+  const signOut = useCallback(async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      setSyncError(`Errore logout: ${error.message}`);
+      throw error;
+    }
+    setSession(null);
+    setUser(null);
+    hasLoadedRef.current = false;
+    setLoadingData(false);
+  }, []);
 
   const addFamilyMember = useCallback((payload = {}) => {
     const created = ensureFamilyMember({
@@ -1033,7 +1040,7 @@ export function AppProvider({ children }) {
           documents: nextDocuments,
           medications: nextMedications,
         });
-      }),
+      })
     );
   }, []);
 
@@ -1043,21 +1050,21 @@ export function AppProvider({ children }) {
     setHealthTables((prev) => ({
       ...prev,
       specialistVisits: ensureArray(prev.specialistVisits).filter(
-        (item) => item.memberId !== memberId,
+        (item) => item.memberId !== memberId
       ),
       visitTherapies: ensureArray(prev.visitTherapies).filter(
-        (item) => item.memberId !== memberId,
+        (item) => item.memberId !== memberId
       ),
       therapyMedications: ensureArray(prev.therapyMedications).filter(
-        (item) => item.memberId !== memberId,
+        (item) => item.memberId !== memberId
       ),
     }));
 
     setArchiveTables((prev) => ({
       ...prev,
-      documents: ensureArray(prev.documents).filter(
-        (doc) => doc.ownerId !== memberId,
-      ),
+      categories: ensureArray(prev.categories).map(ensureArchiveCategory),
+      documents: ensureArray(prev.documents).filter((doc) => doc.ownerId !== memberId),
+      warranties: ensureArray(prev.warranties),
     }));
 
     setTrips((prev) =>
@@ -1065,32 +1072,29 @@ export function AppProvider({ children }) {
         ensureTrip({
           ...trip,
           persons: ensureArray(trip.persons).filter((id) => id !== memberId),
-        }),
-      ),
+        })
+      )
     );
   }, []);
 
-  const addMedicationToMember = useCallback(
-    (memberId, label = "Nuovo farmaco") => {
-      setFamilyMembers((prev) =>
-        prev.map((member) =>
-          member.id === memberId
-            ? ensureFamilyMember({
-                ...member,
-                medications: [
-                  ...ensureArray(member.medications),
-                  ensureMedication({
-                    id: uid("med"),
-                    name: label,
-                  }),
-                ],
-              })
-            : ensureFamilyMember(member),
-        ),
-      );
-    },
-    [],
-  );
+  const addMedicationToMember = useCallback((memberId, label = "Nuovo farmaco") => {
+    setFamilyMembers((prev) =>
+      prev.map((member) =>
+        member.id === memberId
+          ? ensureFamilyMember({
+              ...member,
+              medications: [
+                ...ensureArray(member.medications),
+                ensureMedication({
+                  id: uid("med"),
+                  name: label,
+                }),
+              ],
+            })
+          : ensureFamilyMember(member)
+      )
+    );
+  }, []);
 
   const updateMedicationFromMember = useCallback((memberId, medicationId, payload) => {
     setFamilyMembers((prev) =>
@@ -1101,11 +1105,11 @@ export function AppProvider({ children }) {
               medications: ensureArray(member.medications).map((med) =>
                 med.id === medicationId
                   ? ensureMedication({ ...med, ...payload })
-                  : ensureMedication(med),
+                  : ensureMedication(med)
               ),
             })
-          : ensureFamilyMember(member),
-      ),
+          : ensureFamilyMember(member)
+      )
     );
   }, []);
 
@@ -1116,11 +1120,11 @@ export function AppProvider({ children }) {
           ? ensureFamilyMember({
               ...member,
               medications: ensureArray(member.medications).filter(
-                (med) => med.id !== medicationId,
+                (med) => med.id !== medicationId
               ),
             })
-          : ensureFamilyMember(member),
-      ),
+          : ensureFamilyMember(member)
+      )
     );
   }, []);
 
@@ -1128,14 +1132,8 @@ export function AppProvider({ children }) {
     setArchiveTables((prev) => {
       const current = {
         categories: ensureArray(prev.categories).map(ensureArchiveCategory),
-        documents: ensureArray(prev.documents).map((row) => ({
-          ...row,
-          driveLinks: ensureDriveLinks(row?.driveLinks),
-        })),
-        warranties: ensureArray(prev.warranties).map((row) => ({
-          ...row,
-          driveLinks: ensureDriveLinks(row?.driveLinks),
-        })),
+        documents: ensureArray(prev.documents),
+        warranties: ensureArray(prev.warranties),
       };
 
       const next = typeof updater === "function" ? updater(current) : updater;
@@ -1159,9 +1157,7 @@ export function AppProvider({ children }) {
       const current = {
         specialistVisits: ensureArray(prev.specialistVisits).map(ensureVisit),
         visitTherapies: ensureArray(prev.visitTherapies).map(ensureVisitTherapy),
-        therapyMedications: ensureArray(prev.therapyMedications).map(
-          ensureTherapyMedication,
-        ),
+        therapyMedications: ensureArray(prev.therapyMedications).map(ensureTherapyMedication),
         legacyAppointments: ensureArray(prev.legacyAppointments),
         legacyTherapies: ensureArray(prev.legacyTherapies),
       };
@@ -1171,454 +1167,118 @@ export function AppProvider({ children }) {
       return {
         specialistVisits: ensureArray(next?.specialistVisits).map(ensureVisit),
         visitTherapies: ensureArray(next?.visitTherapies).map(ensureVisitTherapy),
-        therapyMedications: ensureArray(next?.therapyMedications).map(
-          ensureTherapyMedication,
-        ),
+        therapyMedications: ensureArray(next?.therapyMedications).map(ensureTherapyMedication),
         legacyAppointments: ensureArray(next?.legacyAppointments),
         legacyTherapies: ensureArray(next?.legacyTherapies),
       };
     });
   }, []);
 
-  const addTrip = useCallback((payload) => {
+  const updateTrips = useCallback((updater) => {
+    setTrips((prev) => {
+      const current = ensureArray(prev).map(ensureTrip);
+      const next = typeof updater === "function" ? updater(current) : updater;
+      return ensureArray(next).map(ensureTrip);
+    });
+  }, []);
+
+  const addTrip = useCallback((payload = {}) => {
     const created = ensureTrip({
-      ...payload,
       id: uid("trip"),
-      packingChecklist: TRAVEL_CHECKLIST_TEMPLATE.map((group) => ({
-        ...group,
-        id: uid("grp"),
-        items: group.items.map((label) => ({
-          id: uid("chk"),
-          label,
-          done: false,
-        })),
-      })),
+      name: payload.name || "Nuovo viaggio",
+      status: payload.status || "planning",
+      dateFrom: payload.dateFrom || "",
+      dateTo: payload.dateTo || "",
+      persons: ensureArray(payload.persons),
+      flights: ensureArray(payload.flights),
+      hotels: ensureArray(payload.hotels),
+      parkingReservations: ensureArray(payload.parkingReservations),
+      carRentals: ensureArray(payload.carRentals),
+      travelDiary: payload.travelDiary || { days: [], places: [], mediaLinks: [], notes: "" },
+      packingChecklist:
+        ensureArray(payload.packingChecklist).length > 0
+          ? payload.packingChecklist
+          : TRAVEL_CHECKLIST_TEMPLATE.map((group) => ({
+              ...group,
+              id: uid("grp"),
+              items: group.items.map((label) => ({
+                id: uid("chk"),
+                label,
+                done: false,
+              })),
+            })),
+      generalDeadlines: ensureArray(payload.generalDeadlines),
+      notes: payload.notes || "",
     });
 
-    setTrips((prev) => [...prev, created]);
+    setTrips((prev) => [...ensureArray(prev).map(ensureTrip), created]);
     return created;
   }, []);
 
   const updateTrip = useCallback((tripId, payload) => {
     setTrips((prev) =>
-      prev.map((trip) =>
-        trip.id === tripId ? ensureTrip({ ...trip, ...payload }) : ensureTrip(trip),
-      ),
+      ensureArray(prev).map((trip) =>
+        trip.id === tripId ? ensureTrip({ ...trip, ...payload }) : ensureTrip(trip)
+      )
     );
   }, []);
 
   const deleteTrip = useCallback((tripId) => {
-    setTrips((prev) => prev.filter((trip) => trip.id !== tripId));
+    setTrips((prev) => ensureArray(prev).filter((trip) => trip.id !== tripId));
   }, []);
 
-  const toggleTripMember = useCallback((tripId, memberId) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        persons: trip.persons.includes(memberId)
-          ? trip.persons.filter((id) => id !== memberId)
-          : [...trip.persons, memberId],
-      })),
-    );
-  }, []);
-
-  const addFlight = useCallback((tripId, payload) => {
+  const addFlightToTrip = useCallback((tripId, payload = {}) => {
     setTrips((prev) =>
       updateTripInList(prev, tripId, (trip) => ({
         ...trip,
         flights: [
-          ...trip.flights,
+          ...ensureArray(trip.flights),
           ensureFlight({
-            ...payload,
             id: uid("flight"),
-            companyUrl: payload.companyUrl || airlineUrl(payload.company),
+            company: payload.company || "",
+            companyUrl: payload.companyUrl || airlineUrl(payload.company || ""),
+            from: payload.from || "",
+            to: payload.to || "",
+            date: payload.date || "",
+            departureTime: payload.departureTime || "",
+            arrivalTime: payload.arrivalTime || "",
+            flightNumber: payload.flightNumber || "",
+            bookingRef: payload.bookingRef || "",
+            purchaseCost: payload.purchaseCost || "",
+            baggage: ensureArray(payload.baggage),
+            deadlines: ensureArray(payload.deadlines),
           }),
         ],
-      })),
+      }))
     );
   }, []);
 
-  const updateFlight = useCallback((tripId, flightId, payload) => {
+  const updateFlightInTrip = useCallback((tripId, flightId, payload) => {
     setTrips((prev) =>
       updateTripInList(prev, tripId, (trip) => ({
         ...trip,
-        flights: trip.flights.map((flight) =>
+        flights: ensureArray(trip.flights).map((flight) =>
           flight.id === flightId
             ? ensureFlight({
                 ...flight,
                 ...payload,
-                companyUrl: payload.company
-                  ? airlineUrl(payload.company)
-                  : flight.companyUrl,
+                companyUrl:
+                  payload?.companyUrl ??
+                  flight.companyUrl ??
+                  airlineUrl(payload?.company || flight.company || ""),
               })
-            : ensureFlight(flight),
+            : ensureFlight(flight)
         ),
-      })),
+      }))
     );
   }, []);
 
-  const deleteFlight = useCallback((tripId, flightId) => {
+  const deleteFlightFromTrip = useCallback((tripId, flightId) => {
     setTrips((prev) =>
       updateTripInList(prev, tripId, (trip) => ({
         ...trip,
-        flights: trip.flights.filter((flight) => flight.id !== flightId),
-      })),
-    );
-  }, []);
-
-  const invertFlightRoute = useCallback((tripId, flightId) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        flights: trip.flights.map((flight) =>
-          flight.id === flightId
-            ? ensureFlight({ ...flight, from: flight.to, to: flight.from })
-            : ensureFlight(flight),
-        ),
-      })),
-    );
-  }, []);
-
-  const addFlightBaggage = useCallback((tripId, flightId, payload) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        flights: trip.flights.map((flight) =>
-          flight.id === flightId
-            ? ensureFlight({
-                ...flight,
-                baggage: [
-                  ...ensureArray(flight.baggage),
-                  {
-                    id: uid("bag"),
-                    label: payload.label || "",
-                    qty: payload.qty || 1,
-                    cost: payload.cost || "",
-                  },
-                ],
-              })
-            : ensureFlight(flight),
-        ),
-      })),
-    );
-  }, []);
-
-  const deleteFlightBaggage = useCallback((tripId, flightId, baggageId) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        flights: trip.flights.map((flight) =>
-          flight.id === flightId
-            ? ensureFlight({
-                ...flight,
-                baggage: ensureArray(flight.baggage).filter(
-                  (bag) => bag.id !== baggageId,
-                ),
-              })
-            : ensureFlight(flight),
-        ),
-      })),
-    );
-  }, []);
-
-  const addFlightDeadline = useCallback((tripId, flightId, payload) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        flights: trip.flights.map((flight) =>
-          flight.id === flightId
-            ? ensureFlight({
-                ...flight,
-                deadlines: [
-                  ...ensureArray(flight.deadlines),
-                  {
-                    id: uid("deadline"),
-                    title: payload.title || "",
-                    date: payload.date || "",
-                    notes: payload.notes || "",
-                  },
-                ],
-              })
-            : ensureFlight(flight),
-        ),
-      })),
-    );
-  }, []);
-
-  const deleteFlightDeadline = useCallback((tripId, flightId, deadlineId) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        flights: trip.flights.map((flight) =>
-          flight.id === flightId
-            ? ensureFlight({
-                ...flight,
-                deadlines: ensureArray(flight.deadlines).filter(
-                  (item) => item.id !== deadlineId,
-                ),
-              })
-            : ensureFlight(flight),
-        ),
-      })),
-    );
-  }, []);
-
-  const addHotel = useCallback((tripId, payload) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        hotels: [...trip.hotels, ensureHotel({ ...payload, id: uid("hotel") })],
-      })),
-    );
-  }, []);
-
-  const updateHotel = useCallback((tripId, hotelId, payload) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        hotels: trip.hotels.map((hotel) =>
-          hotel.id === hotelId
-            ? ensureHotel({ ...hotel, ...payload })
-            : ensureHotel(hotel),
-        ),
-      })),
-    );
-  }, []);
-
-  const deleteHotel = useCallback((tripId, hotelId) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        hotels: trip.hotels.filter((hotel) => hotel.id !== hotelId),
-      })),
-    );
-  }, []);
-
-  const addHotelDeadline = useCallback((tripId, hotelId, payload) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        hotels: trip.hotels.map((hotel) =>
-          hotel.id === hotelId
-            ? ensureHotel({
-                ...hotel,
-                deadlines: [
-                  ...ensureArray(hotel.deadlines),
-                  {
-                    id: uid("deadline"),
-                    title: payload.title || "",
-                    date: payload.date || "",
-                    notes: payload.notes || "",
-                  },
-                ],
-              })
-            : ensureHotel(hotel),
-        ),
-      })),
-    );
-  }, []);
-
-  const deleteHotelDeadline = useCallback((tripId, hotelId, deadlineId) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        hotels: trip.hotels.map((hotel) =>
-          hotel.id === hotelId
-            ? ensureHotel({
-                ...hotel,
-                deadlines: ensureArray(hotel.deadlines).filter(
-                  (item) => item.id !== deadlineId,
-                ),
-              })
-            : ensureHotel(hotel),
-        ),
-      })),
-    );
-  }, []);
-
-  const addParkingReservation = useCallback((tripId, payload) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        parkingReservations: [
-          ...trip.parkingReservations,
-          ensureParkingReservation({ ...payload, id: uid("park") }),
-        ],
-      })),
-    );
-  }, []);
-
-  const deleteParkingReservation = useCallback((tripId, parkingId) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        parkingReservations: trip.parkingReservations.filter(
-          (item) => item.id !== parkingId,
-        ),
-      })),
-    );
-  }, []);
-
-  const addCarRental = useCallback((tripId, payload) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        carRentals: [
-          ...trip.carRentals,
-          ensureCarRental({ ...payload, id: uid("car") }),
-        ],
-      })),
-    );
-  }, []);
-
-  const deleteCarRental = useCallback((tripId, carId) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        carRentals: trip.carRentals.filter((item) => item.id !== carId),
-      })),
-    );
-  }, []);
-
-  const addDiaryDay = useCallback((tripId, payload) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        travelDiary: {
-          ...trip.travelDiary,
-          days: [
-            ...ensureArray(trip.travelDiary?.days),
-            ensureDiaryDay({ ...payload, id: uid("day") }),
-          ],
-        },
-      })),
-    );
-  }, []);
-
-  const deleteDiaryDay = useCallback((tripId, dayId) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        travelDiary: {
-          ...trip.travelDiary,
-          days: ensureArray(trip.travelDiary?.days).filter(
-            (item) => item.id !== dayId,
-          ),
-        },
-      })),
-    );
-  }, []);
-
-  const addDiaryPlace = useCallback((tripId, payload) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        travelDiary: {
-          ...trip.travelDiary,
-          places: [
-            ...ensureArray(trip.travelDiary?.places),
-            ensureDiaryPlace({ ...payload, id: uid("place") }),
-          ],
-        },
-      })),
-    );
-  }, []);
-
-  const deleteDiaryPlace = useCallback((tripId, placeId) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        travelDiary: {
-          ...trip.travelDiary,
-          places: ensureArray(trip.travelDiary?.places).filter(
-            (item) => item.id !== placeId,
-          ),
-        },
-      })),
-    );
-  }, []);
-
-  const addDiaryMedia = useCallback((tripId, payload) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        travelDiary: {
-          ...trip.travelDiary,
-          mediaLinks: [
-            ...ensureArray(trip.travelDiary?.mediaLinks),
-            ensureDiaryMedia({ ...payload, id: uid("media") }),
-          ],
-        },
-      })),
-    );
-  }, []);
-
-  const deleteDiaryMedia = useCallback((tripId, mediaId) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        travelDiary: {
-          ...trip.travelDiary,
-          mediaLinks: ensureArray(trip.travelDiary?.mediaLinks).filter(
-            (item) => item.id !== mediaId,
-          ),
-        },
-      })),
-    );
-  }, []);
-
-  const toggleChecklistItem = useCallback((tripId, groupId, itemId) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        packingChecklist: ensureArray(trip.packingChecklist).map((group) =>
-          group.id === groupId
-            ? ensureChecklistGroup({
-                ...group,
-                items: ensureArray(group.items).map((item) =>
-                  item.id === itemId ? { ...item, done: !item.done } : item,
-                ),
-              })
-            : ensureChecklistGroup(group),
-        ),
-      })),
-    );
-  }, []);
-
-  const addChecklistItem = useCallback((tripId, groupId, label) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        packingChecklist: ensureArray(trip.packingChecklist).map((group) =>
-          group.id === groupId
-            ? ensureChecklistGroup({
-                ...group,
-                items: [
-                  ...ensureArray(group.items),
-                  { id: uid("chk"), label, done: false },
-                ],
-              })
-            : ensureChecklistGroup(group),
-        ),
-      })),
-    );
-  }, []);
-
-  const removeChecklistItem = useCallback((tripId, groupId, itemId) => {
-    setTrips((prev) =>
-      updateTripInList(prev, tripId, (trip) => ({
-        ...trip,
-        packingChecklist: ensureArray(trip.packingChecklist).map((group) =>
-          group.id === groupId
-            ? ensureChecklistGroup({
-                ...group,
-                items: ensureArray(group.items).filter(
-                  (item) => item.id !== itemId,
-                ),
-              })
-            : ensureChecklistGroup(group),
-        ),
-      })),
+        flights: ensureArray(trip.flights).filter((flight) => flight.id !== flightId),
+      }))
     );
   }, []);
 
@@ -1627,94 +1287,56 @@ export function AppProvider({ children }) {
       session,
       user,
       authReady,
-      signOut,
+
       trips,
       familyMembers,
       archiveTables,
       healthTables,
+
       loadingData,
       syncError,
-      addTrip,
-      updateTrip,
-      deleteTrip,
-      toggleTripMember,
-      addFlight,
-      updateFlight,
-      deleteFlight,
-      invertFlightRoute,
-      addFlightBaggage,
-      deleteFlightBaggage,
-      addFlightDeadline,
-      deleteFlightDeadline,
-      addHotel,
-      updateHotel,
-      deleteHotel,
-      addHotelDeadline,
-      deleteHotelDeadline,
-      addParkingReservation,
-      deleteParkingReservation,
-      addCarRental,
-      deleteCarRental,
-      addDiaryDay,
-      deleteDiaryDay,
-      addDiaryPlace,
-      deleteDiaryPlace,
-      addDiaryMedia,
-      deleteDiaryMedia,
-      toggleChecklistItem,
-      addChecklistItem,
-      removeChecklistItem,
+
+      getCurrentPayload,
+      hydrate,
+      signOut,
+
       addFamilyMember,
       updateFamilyMember,
       deleteFamilyMember,
+
       addMedicationToMember,
       updateMedicationFromMember,
       deleteMedicationFromMember,
+
       updateArchive,
       updateHealth,
-      getCurrentPayload,
+      updateTrips,
+
+      addTrip,
+      updateTrip,
+      deleteTrip,
+      addFlightToTrip,
+      updateFlightInTrip,
+      deleteFlightFromTrip,
+
+      setTrips,
+      setFamilyMembers,
+      setArchiveTables,
+      setHealthTables,
     }),
     [
       session,
       user,
       authReady,
-      signOut,
       trips,
       familyMembers,
       archiveTables,
       healthTables,
       loadingData,
       syncError,
-      addTrip,
-      updateTrip,
-      deleteTrip,
-      toggleTripMember,
-      addFlight,
-      updateFlight,
-      deleteFlight,
-      invertFlightRoute,
-      addFlightBaggage,
-      deleteFlightBaggage,
-      addFlightDeadline,
-      deleteFlightDeadline,
-      addHotel,
-      updateHotel,
-      deleteHotel,
-      addHotelDeadline,
-      deleteHotelDeadline,
-      addParkingReservation,
-      deleteParkingReservation,
-      addCarRental,
-      deleteCarRental,
-      addDiaryDay,
-      deleteDiaryDay,
-      addDiaryPlace,
-      deleteDiaryPlace,
-      addDiaryMedia,
-      deleteDiaryMedia,
-      toggleChecklistItem,
-      addChecklistItem,
-      removeChecklistItem,
+      getCurrentPayload,
+      hydrate,
+      signOut,
       addFamilyMember,
       updateFamilyMember,
       deleteFamilyMember,
@@ -1723,17 +1345,23 @@ export function AppProvider({ children }) {
       deleteMedicationFromMember,
       updateArchive,
       updateHealth,
-      getCurrentPayload,
-    ],
+      updateTrips,
+      addTrip,
+      updateTrip,
+      deleteTrip,
+      addFlightToTrip,
+      updateFlightInTrip,
+      deleteFlightFromTrip,
+    ]
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
 
 export function useAppContext() {
-  const context = useContext(AppContext);
-  if (!context) {
+  const ctx = useContext(AppContext);
+  if (!ctx) {
     throw new Error("useAppContext must be used inside AppProvider");
   }
-  return context;
+  return ctx;
 }

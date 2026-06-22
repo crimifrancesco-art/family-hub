@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppContext } from '../context/AppContext'
 
 const uid = (prefix = 'id') =>
@@ -207,6 +207,16 @@ function priorityLabel(value) {
   return 'Media'
 }
 
+function sameMemberProfile(a, b) {
+  return (
+    (a?.doctor || '') === (b?.doctor || '') &&
+    (a?.healthId || '') === (b?.healthId || '') &&
+    (a?.allergies || '') === (b?.allergies || '') &&
+    (a?.conditions || '') === (b?.conditions || '') &&
+    (a?.emergencyContact || '') === (b?.emergencyContact || '')
+  )
+}
+
 function SectionHeader({ badge, title, subtitle }) {
   return (
     <div className="section-head compact-head">
@@ -271,6 +281,8 @@ export default function SalutePage() {
   const [editTherapyMedicationForm, setEditTherapyMedicationForm] = useState(emptyTherapyMedicationForm)
   const [editPersonalMedicationForm, setEditPersonalMedicationForm] = useState(emptyPersonalMedicationForm)
 
+  const lastProfileSyncRef = useRef('')
+
   useEffect(() => {
     if (!familyMembers.length) {
       setSelectedMemberId('')
@@ -287,17 +299,36 @@ export default function SalutePage() {
     familyMembers.find((member) => member.id === selectedMemberId) || familyMembers[0] || null
 
   useEffect(() => {
-    setMemberProfileForm({
+    const nextProfile = {
       doctor: selectedMember?.doctor || '',
       healthId: selectedMember?.healthId || '',
       allergies: selectedMember?.allergies || '',
       conditions: selectedMember?.conditions || selectedMember?.chronicConditions || '',
       emergencyContact: selectedMember?.emergencyContact || '',
-    })
-  }, [selectedMemberId, selectedMember])
+    }
+
+    setMemberProfileForm(nextProfile)
+    lastProfileSyncRef.current = JSON.stringify(nextProfile)
+  }, [selectedMember?.id])
 
   useEffect(() => {
     if (!selectedMember?.id) return
+
+    const currentProfile = {
+      doctor: selectedMember?.doctor || '',
+      healthId: selectedMember?.healthId || '',
+      allergies: selectedMember?.allergies || '',
+      conditions: selectedMember?.conditions || selectedMember?.chronicConditions || '',
+      emergencyContact: selectedMember?.emergencyContact || '',
+    }
+
+    if (sameMemberProfile(memberProfileForm, currentProfile)) {
+      lastProfileSyncRef.current = JSON.stringify(memberProfileForm)
+      return
+    }
+
+    const serialized = JSON.stringify(memberProfileForm)
+    if (serialized === lastProfileSyncRef.current) return
 
     const timer = setTimeout(() => {
       updateFamilyMember(selectedMember.id, {
@@ -307,10 +338,12 @@ export default function SalutePage() {
         conditions: memberProfileForm.conditions,
         emergencyContact: memberProfileForm.emergencyContact,
       })
+
+      lastProfileSyncRef.current = serialized
     }, 350)
 
     return () => clearTimeout(timer)
-  }, [memberProfileForm, selectedMember?.id, updateFamilyMember])
+  }, [memberProfileForm, selectedMember?.id, selectedMember, updateFamilyMember])
 
   const memberVisits = useMemo(() => {
     return ensureArray(healthTables?.specialistVisits)

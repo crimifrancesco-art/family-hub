@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAppContext } from '../context/AppContext'
 
 const emptyMemberForm = {
@@ -29,6 +29,12 @@ const emptyMemberForm = {
   },
 }
 
+const emptyCategoryForm = {
+  name: '',
+  kind: 'standard',
+    parentId: '',
+}
+
 const emptyDocumentForm = {
   category: 'Identità',
   categoryId: 'cat_identity',
@@ -39,16 +45,6 @@ const emptyDocumentForm = {
   issueDate: '',
   expiryDate: '',
   storage: '',
-  driveLinksText: '',
-  notes: '',
-}
-
-const emptyWarrantyForm = {
-  item: '',
-  brand: '',
-  purchaseDate: '',
-  expiryDate: '',
-  invoiceRef: '',
   driveLinksText: '',
   notes: '',
 }
@@ -68,6 +64,22 @@ function formatDate(value) {
   return `${parts[2]}/${parts[1]}/${parts[0]}`
 }
 
+function daysToExpiry(dateValue) {
+  if (!dateValue) return null
+  const target = new Date(`${dateValue}T12:00:00`)
+  if (Number.isNaN(target.getTime())) return null
+  const today = new Date()
+  const diff = target.getTime() - today.getTime()
+  return Math.ceil(diff / (1000 * 60 * 60 * 24))
+}
+
+function expiryBadge(days) {
+  if (days === null) return { label: 'Senza scadenza', className: 'badge-muted' }
+  if (days < 0) return { label: 'Scaduto', className: 'badge-danger' }
+  if (days <= 30) return { label: `${days} gg`, className: 'badge-warning' }
+  return { label: `${days} gg`, className: 'badge-success' }
+}
+
 function driveLinksToText(links) {
   return ensureArray(links)
     .map((entry) => {
@@ -78,33 +90,82 @@ function driveLinksToText(links) {
     .join('\n')
 }
 
-function textToDriveLinks(text) {
+function normalizeUrl(raw) {
+  const value = String(raw || '').trim()
+  if (!value) return ''
+  return /^https?:\/\//i.test(value) ? value : `https://${value}`
+}
+
+function textToNormalizedDriveLinks(text) {
   return String(text || '')
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
-    .map((url) => ({
+    .map((url, index) => ({
       id: uid('lnk'),
-      label: '',
-      url,
+      label: `Link ${index + 1}`,
+      url: normalizeUrl(url),
     }))
+}
+
+function isValidHttpUrl(value) {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
 }
 
 function SectionTitle({ title, subtitle, action }) {
   return (
-    <div className="arch-section-head">
+    <div className="section-head compact-head">
       <div>
-        <div className="arch-section-title">{title}</div>
-        {subtitle ? <div className="arch-section-subtitle">{subtitle}</div> : null}
+        <h2 className="page-title" style={{ marginBottom: 4 }}>{title}</h2>
+        {subtitle ? <p className="page-subtitle">{subtitle}</p> : null}
       </div>
       {action ? <div>{action}</div> : null}
     </div>
   )
 }
 
-function FieldError({ text }) {
-  if (!text) return null
-  return <div className="error-msg" style={{ marginTop: 8 }}>{text}</div>
+function MetaPill({ label, value }) {
+  if (!value) return null
+  return (
+    <div className="meta-pill">
+      <span className="meta-label">{label}:</span> {value}
+    </div>
+  )
+}
+
+function memberToForm(member) {
+  return {
+    initials: member?.initials || '',
+    name: member?.name || '',
+    role: member?.role || '',
+    relationship: member?.relationship || '',
+    birthDate: member?.birthDate || '',
+    bloodGroup: member?.bloodGroup || '',
+    fiscalCode: member?.fiscalCode || '',
+    phone: member?.phone || '',
+    email: member?.email || '',
+    doctor: member?.doctor || '',
+    pediatrician: member?.pediatrician || '',
+    allergies: member?.allergies || '',
+    chronicConditions: member?.chronicConditions || '',
+    currentTherapies: member?.currentTherapies || '',
+    emergencyNotes: member?.emergencyNotes || '',
+    conditions: member?.conditions || '',
+    emergencyContact: member?.emergencyContact || '',
+    healthId: member?.healthId || '',
+    healthNotes: member?.healthNotes || '',
+    documents: {
+      idCard: member?.documents?.idCard || '',
+      passport: member?.documents?.passport || '',
+      healthCard: member?.documents?.healthCard || '',
+      drivingLicense: member?.documents?.drivingLicense || '',
+    },
+  }
 }
 
 export default function ArchivioPage() {
@@ -113,106 +174,239 @@ export default function ArchivioPage() {
     archiveTables,
     loadingData,
     syncError,
-    addFamilyMember,
+    setArchiveTables,
     updateFamilyMember,
+    addFamilyMember,
     deleteFamilyMember,
-    updateArchive,
   } = useAppContext()
 
   const [memberForm, setMemberForm] = useState(emptyMemberForm)
+  const [editingMemberId, setEditingMemberId] = useState('')
+  const [editingMemberForm, setEditingMemberForm] = useState(emptyMemberForm)
+
+  const [categoryForm, setCategoryForm] = useState(emptyCategoryForm)
   const [documentForm, setDocumentForm] = useState(emptyDocumentForm)
-  const [warrantyForm, setWarrantyForm] = useState(emptyWarrantyForm)
 
   const [memberError, setMemberError] = useState('')
+  const [categoryError, setCategoryError] = useState('')
   const [documentError, setDocumentError] = useState('')
-  const [warrantyError, setWarrantyError] = useState('')
 
-  const [memberSearch, setMemberSearch] = useState('')
-  const [archiveView, setArchiveView] = useState('documents')
+  const [selectedCategoryId, setSelectedCategoryId] = useState('')
+  const [expandedIds, setExpandedIds] = useState([])
+  const [selectedNodeId, setSelectedNodeId] = useState('')
 
-  const [editingMemberId, setEditingMemberId] = useState('')
+  const [editingCategoryId, setEditingCategoryId] = useState('')
+  const [editingCategoryForm, setEditingCategoryForm] = useState(emptyCategoryForm)
+
   const [editingDocumentId, setEditingDocumentId] = useState('')
-  const [editingWarrantyId, setEditingWarrantyId] = useState('')
+  const [editingDocumentForm, setEditingDocumentForm] = useState(emptyDocumentForm)
 
-  const [editMemberForm, setEditMemberForm] = useState(emptyMemberForm)
-  const [editDocumentForm, setEditDocumentForm] = useState(emptyDocumentForm)
-  const [editWarrantyForm, setEditWarrantyForm] = useState(emptyWarrantyForm)
-
-  const members = ensureArray(familyMembers)
   const categories = ensureArray(archiveTables?.categories)
   const documents = ensureArray(archiveTables?.documents)
-  const warranties = ensureArray(archiveTables?.warranties)
 
-  const filteredMembers = useMemo(() => {
-    const q = memberSearch.trim().toLowerCase()
-    return members.filter((member) => {
-      if (!q) return true
-      const haystack = [
-        member.initials,
-        member.name,
-        member.role,
-        member.relationship,
-        member.phone,
-        member.email,
-        member.fiscalCode,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
+  const selectedEditingMember =
+    familyMembers.find((member) => member.id === editingMemberId) || null
 
-      return haystack.includes(q)
-    })
-  }, [members, memberSearch])
-
-  const archiveStats = useMemo(() => {
-    return {
-      members: members.length,
-      categories: categories.length,
-      documents: documents.length,
-      warranties: warranties.length,
+  useEffect(() => {
+    if (!categories.length) return
+    const exists = categories.some((item) => item.id === selectedCategoryId)
+    if (!selectedCategoryId || !exists) {
+      setSelectedCategoryId(categories[0].id)
     }
-  }, [members, categories, documents, warranties])
+  }, [categories, selectedCategoryId])
 
-  const handleMemberFormChange = (field, value) => {
-    setMemberForm((prev) => ({ ...prev, [field]: value }))
+  useEffect(() => {
+    const cat = categories.find((row) => row.id === selectedCategoryId)
+    if (!cat) return
+    setDocumentForm((prev) => ({
+      ...prev,
+      categoryId: cat.id,
+      category: cat.name,
+    }))
+  }, [selectedCategoryId, categories])
+
+  useEffect(() => {
+    if (!editingMemberId) return
+    const exists = familyMembers.some((member) => member.id === editingMemberId)
+    if (!exists) {
+      setEditingMemberId('')
+      setEditingMemberForm(emptyMemberForm)
+    }
+  }, [familyMembers, editingMemberId])
+
+  const documentsByCategory = useMemo(() => {
+    const map = new Map()
+    categories.forEach((cat) => map.set(cat.id, []))
+
+    documents.forEach((doc) => {
+      const catId = doc.categoryId || categories.find((c) => c.name === doc.category)?.id
+      if (!map.has(catId)) map.set(catId, [])
+      map.get(catId).push(doc)
+    })
+
+    return map
+  }, [categories, documents])
+
+  const categoryRows = useMemo(() => {
+      return categories.filter((cat) => !cat.parentId).map((cat) => {
+      const docs = documentsByCategory.get(cat.id) || []
+      const nextExpiry = docs
+        .map((doc) => doc.expiryDate)
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b))[0]
+
+      return {
+        ...cat,
+        count: docs.length,
+        nextExpiry,
+              children: categories.filter((c) => c.parentId === cat.id),
+      }
+    })
+  }, [categories, documentsByCategory])
+
+  const visibleDocuments = useMemo(() => {
+    if (!selectedCategoryId) return documents
+    return documents.filter((doc) => {
+      const catId = doc.categoryId || categories.find((c) => c.name === doc.category)?.id
+      return catId === selectedCategoryId
+    })
+  }, [documents, selectedCategoryId, categories])
+
+  const treeRows = useMemo(() => {
+    return categoryRows.flatMap((cat) => {
+      const catNode = {
+        id: `cat_${cat.id}`,
+        type: 'category',
+        categoryId: cat.id,
+        payload: cat,
+      }
+
+      const isExpanded = expandedIds.includes(cat.id)
+      if (!isExpanded) return [catNode]
+
+      const childNodes = (documentsByCategory.get(cat.id) || []).map((doc) => ({
+        id: `doc_${doc.id}`,
+        type: 'document',
+        categoryId: cat.id,
+        payload: doc,
+      }))
+
+            const subCatNodes = (cat.children || []).flatMap((subCat) => {
+        const subCatNode = {
+          id: `cat_${subCat.id}`,
+          type: 'category',
+          categoryId: subCat.id,
+          payload: { ...subCat, isChild: true },
+        }
+        const subDocs = (documentsByCategory.get(subCat.id) || []).map((doc) => ({
+          id: `doc_${doc.id}`,
+          type: 'document',
+          categoryId: subCat.id,
+          payload: doc,
+        }))
+        return [subCatNode, ...subDocs]
+      })
+      return [catNode, ...subCatNodes, ...childNodes]
+    })
+  }, [categoryRows, documentsByCategory, expandedIds])
+
+  function toggleExpanded(categoryId) {
+    setExpandedIds((prev) =>
+      prev.includes(categoryId)
+        ? prev.filter((id) => id !== categoryId)
+        : [...prev, categoryId],
+    )
   }
 
-  const handleMemberDocumentChange = (field, value, mode = 'create') => {
-    if (mode === 'edit') {
-      setEditMemberForm((prev) => ({
-        ...prev,
-        documents: {
-          ...prev.documents,
-          [field]: value,
-        },
-      }))
+  function resetDocumentForm() {
+    const cat = categories.find((row) => row.id === selectedCategoryId) || categories[0]
+    setDocumentForm({
+      ...emptyDocumentForm,
+      categoryId: cat?.id || '',
+      category: cat?.name || '',
+    })
+  }
+
+  function startEditMember(member) {
+    setEditingMemberId(member.id)
+    setEditingMemberForm(memberToForm(member))
+  }
+
+  function cancelEditMember() {
+    setEditingMemberId('')
+    setEditingMemberForm(emptyMemberForm)
+  }
+
+  function saveEditMember() {
+    if (!editingMemberId) return
+
+    const name = editingMemberForm.name.trim()
+    if (!name) {
+      setMemberError('Il nome del familiare è obbligatorio.')
       return
     }
 
-    setMemberForm((prev) => ({
-      ...prev,
+    updateFamilyMember(editingMemberId, {
+      initials: editingMemberForm.initials.trim(),
+      name,
+      role: editingMemberForm.role.trim(),
+      relationship: editingMemberForm.relationship.trim(),
+      birthDate: editingMemberForm.birthDate,
+      bloodGroup: editingMemberForm.bloodGroup.trim(),
+      fiscalCode: editingMemberForm.fiscalCode.trim(),
+      phone: editingMemberForm.phone.trim(),
+      email: editingMemberForm.email.trim(),
+      doctor: editingMemberForm.doctor.trim(),
+      pediatrician: editingMemberForm.pediatrician.trim(),
+      allergies: editingMemberForm.allergies.trim(),
+      chronicConditions: editingMemberForm.chronicConditions.trim(),
+      currentTherapies: editingMemberForm.currentTherapies.trim(),
+      emergencyNotes: editingMemberForm.emergencyNotes.trim(),
+      conditions: editingMemberForm.conditions.trim(),
+      emergencyContact: editingMemberForm.emergencyContact.trim(),
+      healthId: editingMemberForm.healthId.trim(),
+      healthNotes: editingMemberForm.healthNotes.trim(),
       documents: {
-        ...prev.documents,
-        [field]: value,
+        idCard: editingMemberForm.documents.idCard.trim(),
+        passport: editingMemberForm.documents.passport.trim(),
+        healthCard: editingMemberForm.documents.healthCard.trim(),
+        drivingLicense: editingMemberForm.documents.drivingLicense.trim(),
       },
-    }))
+    })
+
+    setMemberError('')
   }
 
-  const handleAddMember = (event) => {
+  function handleDeleteMember(member) {
+    const label = member?.name || member?.role || member?.initials || 'questo familiare'
+    const confirmed = window.confirm(
+      `Vuoi davvero eliminare ${label}? Verranno rimossi anche documenti, visite, terapie, farmaci e collegamenti associati.`,
+    )
+    if (!confirmed) return
+
+    if (editingMemberId === member.id) {
+      setEditingMemberId('')
+      setEditingMemberForm(emptyMemberForm)
+    }
+
+    deleteFamilyMember(member.id)
+  }
+
+  function handleAddMember(event) {
     event.preventDefault()
     setMemberError('')
 
     if (!memberForm.name.trim()) {
-      setMemberError('Il nome del componente famiglia è obbligatorio.')
+      setMemberError('Il nome del familiare è obbligatorio.')
       return
     }
 
-    addFamilyMember({
-      ...memberForm,
+    const created = addFamilyMember({
       initials: memberForm.initials.trim(),
       name: memberForm.name.trim(),
       role: memberForm.role.trim(),
       relationship: memberForm.relationship.trim(),
+      birthDate: memberForm.birthDate,
       bloodGroup: memberForm.bloodGroup.trim(),
       fiscalCode: memberForm.fiscalCode.trim(),
       phone: memberForm.phone.trim(),
@@ -227,7 +421,6 @@ export default function ArchivioPage() {
       emergencyContact: memberForm.emergencyContact.trim(),
       healthId: memberForm.healthId.trim(),
       healthNotes: memberForm.healthNotes.trim(),
-      medications: [],
       documents: {
         idCard: memberForm.documents.idCard.trim(),
         passport: memberForm.documents.passport.trim(),
@@ -237,449 +430,480 @@ export default function ArchivioPage() {
     })
 
     setMemberForm(emptyMemberForm)
+
+    if (created?.id) {
+      setEditingMemberId(created.id)
+      setEditingMemberForm(memberToForm(created))
+    }
   }
 
-  const startEditMember = (member) => {
-    setEditingMemberId(member.id)
-    setEditMemberForm({
-      initials: member.initials || '',
-      name: member.name || '',
-      role: member.role || '',
-      relationship: member.relationship || '',
-      birthDate: member.birthDate || '',
-      bloodGroup: member.bloodGroup || '',
-      fiscalCode: member.fiscalCode || '',
-      phone: member.phone || '',
-      email: member.email || '',
-      doctor: member.doctor || '',
-      pediatrician: member.pediatrician || '',
-      allergies: member.allergies || '',
-      chronicConditions: member.chronicConditions || '',
-      currentTherapies: member.currentTherapies || '',
-      emergencyNotes: member.emergencyNotes || '',
-      conditions: member.conditions || '',
-      emergencyContact: member.emergencyContact || '',
-      healthId: member.healthId || '',
-      healthNotes: member.healthNotes || '',
-      documents: {
-        idCard: member.documents?.idCard || '',
-        passport: member.documents?.passport || '',
-        healthCard: member.documents?.healthCard || '',
-        drivingLicense: member.documents?.drivingLicense || '',
-      },
-    })
-  }
+  function handleAddCategory(event) {
+    event.preventDefault()
+    setCategoryError('')
 
-  const saveEditMember = (memberId) => {
-    if (!editMemberForm.name.trim()) {
-      setMemberError('Il nome del componente famiglia è obbligatorio.')
+    const name = categoryForm.name.trim()
+    if (!name) {
+      setCategoryError('Il nome categoria è obbligatorio.')
       return
     }
 
-    updateFamilyMember(memberId, {
-      initials: editMemberForm.initials.trim(),
-      name: editMemberForm.name.trim(),
-      role: editMemberForm.role.trim(),
-      relationship: editMemberForm.relationship.trim(),
-      birthDate: editMemberForm.birthDate,
-      bloodGroup: editMemberForm.bloodGroup.trim(),
-      fiscalCode: editMemberForm.fiscalCode.trim(),
-      phone: editMemberForm.phone.trim(),
-      email: editMemberForm.email.trim(),
-      doctor: editMemberForm.doctor.trim(),
-      pediatrician: editMemberForm.pediatrician.trim(),
-      allergies: editMemberForm.allergies.trim(),
-      chronicConditions: editMemberForm.chronicConditions.trim(),
-      currentTherapies: editMemberForm.currentTherapies.trim(),
-      emergencyNotes: editMemberForm.emergencyNotes.trim(),
-      conditions: editMemberForm.conditions.trim(),
-      emergencyContact: editMemberForm.emergencyContact.trim(),
-      healthId: editMemberForm.healthId.trim(),
-      healthNotes: editMemberForm.healthNotes.trim(),
-      documents: {
-        idCard: editMemberForm.documents.idCard.trim(),
-        passport: editMemberForm.documents.passport.trim(),
-        healthCard: editMemberForm.documents.healthCard.trim(),
-        drivingLicense: editMemberForm.documents.drivingLicense.trim(),
-      },
-    })
+    const duplicate = categories.some(
+          (cat) => cat.name.trim().toLowerCase() === name.toLowerCase() && (cat.parentId || null) === (categoryForm.parentId || null),
+    )
+    if (duplicate) {
+      setCategoryError('Esiste già una categoria con questo nome.')
+      return
+    }
 
-    setEditingMemberId('')
-    setEditMemberForm(emptyMemberForm)
+    const nextCategory = {
+      id: uid('cat'),
+      name,
+      kind: categoryForm.kind || 'standard',
+          parentId: categoryForm.parentId || null,
+    }
+
+    setArchiveTables((prev) => ({
+      ...prev,
+      categories: [...ensureArray(prev.categories), nextCategory],
+      documents: ensureArray(prev.documents),
+      warranties: ensureArray(prev.warranties),
+    }))
+
+    setCategoryForm(emptyCategoryForm)
+    setSelectedCategoryId(nextCategory.id)
+    setExpandedIds((prev) => [...new Set([...prev, nextCategory.id])])
+    setSelectedNodeId(`cat_${nextCategory.id}`)
   }
 
-  const handleDeleteMember = (memberId) => {
-    deleteFamilyMember(memberId)
-    if (editingMemberId === memberId) {
-      setEditingMemberId('')
-      setEditMemberForm(emptyMemberForm)
+  function startEditCategory(category) {
+    setEditingCategoryId(category.id)
+    setEditingCategoryForm({
+      name: category.name || '',
+      kind: category.kind || 'standard',
+          parentId: category.parentId || '',
+    })
+  }
+
+  function saveEditCategory(categoryId) {
+    setCategoryError('')
+
+        const name = editingCategoryForm.name.trim()
+    if (!name) {
+      setCategoryError('Il nome categoria è obbligatorio.')
+      return
+    }
+
+    const duplicate = categories.some(
+      (cat) =>
+        cat.id !== categoryId && cat.name.trim().toLowerCase() === name.toLowerCase() && (cat.parentId || null) === (editingCategoryForm.parentId || null)
+    )
+    if (duplicate) {
+      setCategoryError('Esiste già una categoria con questo nome.')
+      return
+    }
+
+    const oldCategory = categories.find((cat) => cat.id === categoryId)
+    if (!oldCategory) return
+
+    setArchiveTables((prev) => ({
+      ...prev,
+      categories: ensureArray(prev.categories).map((cat) =>
+        cat.id === categoryId
+          ? { ...cat, name, kind: editingCategoryForm.kind || 'standard' , parentId: editingCategoryForm.parentId || null }
+          : cat,
+      ),
+      documents: ensureArray(prev.documents).map((doc) =>
+        doc.categoryId === categoryId
+          ? { ...doc, category: name, categoryId }
+          : doc,
+      ),
+      warranties: ensureArray(prev.warranties),
+    }))
+
+    if (selectedCategoryId === categoryId) {
+      setDocumentForm((prev) => ({ ...prev, categoryId, category: name }))
+    }
+
+    if (oldCategory?.name && editingDocumentForm.categoryId === categoryId) {
+      setEditingDocumentForm((prev) => ({ ...prev, categoryId, category: name }))
+    }
+
+    setEditingCategoryId('')
+    setEditingCategoryForm(emptyCategoryForm)
+  }
+
+  function deleteCategorySafe(categoryId) {
+        const hasChildren = categories.some((c) => c.parentId === categoryId)
+    if (hasChildren) {
+      setCategoryError('Elimina prima le sottocategorie prima di rimuovere questa categoria.')
+      return
+    }
+    const linkedDocs = documents.filter((doc) => doc.categoryId === categoryId)
+    if (linkedDocs.length) {
+      setCategoryError('Non puoi eliminare una categoria che contiene documenti.')
+      return
+    }
+
+    setArchiveTables((prev) => ({
+      ...prev,
+      categories: ensureArray(prev.categories).filter((cat) => cat.id !== categoryId),
+      documents: ensureArray(prev.documents),
+      warranties: ensureArray(prev.warranties),
+    }))
+
+    setExpandedIds((prev) => prev.filter((id) => id !== categoryId))
+
+    if (selectedCategoryId === categoryId) {
+      const remaining = categories.filter((cat) => cat.id !== categoryId)
+      setSelectedCategoryId(remaining[0]?.id || '')
+    }
+
+    if (selectedNodeId === `cat_${categoryId}`) setSelectedNodeId('')
+    if (editingCategoryId === categoryId) {
+      setEditingCategoryId('')
+      setEditingCategoryForm(emptyCategoryForm)
     }
   }
 
-  const handleAddDocument = (event) => {
+  function handleAddDocument(event) {
     event.preventDefault()
     setDocumentError('')
 
-    if (!documentForm.title.trim()) {
-      setDocumentError('Il titolo del documento è obbligatorio.')
+    const category = categories.find((cat) => cat.id === documentForm.categoryId)
+    if (!category) {
+      setDocumentError('Seleziona una categoria valida.')
       return
     }
 
-    updateArchive((current) => ({
-      ...current,
-      documents: [
-        ...ensureArray(current.documents),
-        {
-          id: uid('doc'),
-          category: documentForm.category,
-          categoryId: documentForm.categoryId,
-          owner: documentForm.owner.trim(),
-          ownerId: documentForm.ownerId,
-          title: documentForm.title.trim(),
-          number: documentForm.number.trim(),
-          issueDate: documentForm.issueDate,
-          expiryDate: documentForm.expiryDate,
-          storage: documentForm.storage.trim(),
-          driveLinks: textToDriveLinks(documentForm.driveLinksText),
-          notes: documentForm.notes.trim(),
-        },
-      ],
+    if (!documentForm.title.trim()) {
+      setDocumentError('Il titolo documento è obbligatorio.')
+      return
+    }
+
+    const driveLinks = textToNormalizedDriveLinks(documentForm.driveLinksText)
+    const invalid = driveLinks.some((item) => !isValidHttpUrl(item.url))
+    if (invalid) {
+      setDocumentError('Uno o più link non sono validi.')
+      return
+    }
+
+    const ownerMember = familyMembers.find((member) => member.id === documentForm.ownerId)
+
+    const nextDocument = {
+      id: uid('doc'),
+      category: category.name,
+      categoryId: category.id,
+      owner: ownerMember?.name || documentForm.owner.trim(),
+      ownerId: ownerMember?.id || documentForm.ownerId || '',
+      title: documentForm.title.trim(),
+      number: documentForm.number.trim(),
+      issueDate: documentForm.issueDate,
+      expiryDate: documentForm.expiryDate,
+      storage: documentForm.storage.trim(),
+      driveLinks,
+      notes: documentForm.notes.trim(),
+    }
+
+    setArchiveTables((prev) => ({
+      ...prev,
+      categories: ensureArray(prev.categories),
+      documents: [...ensureArray(prev.documents), nextDocument],
+      warranties: ensureArray(prev.warranties),
     }))
 
-    setDocumentForm(emptyDocumentForm)
+    setExpandedIds((prev) => [...new Set([...prev, category.id])])
+    setSelectedNodeId(`doc_${nextDocument.id}`)
+    resetDocumentForm()
   }
 
-  const startEditDocument = (item) => {
-    setEditingDocumentId(item.id)
-    setEditDocumentForm({
-      category: item.category || 'Identità',
-      categoryId: item.categoryId || 'cat_identity',
-      owner: item.owner || '',
-      ownerId: item.ownerId || '',
-      title: item.title || '',
-      number: item.number || '',
-      issueDate: item.issueDate || '',
-      expiryDate: item.expiryDate || '',
-      storage: item.storage || '',
-      driveLinksText: driveLinksToText(item.driveLinks),
-      notes: item.notes || '',
+  function startEditDocument(doc) {
+    setEditingDocumentId(doc.id)
+    setEditingDocumentForm({
+      category: doc.category || '',
+      categoryId: doc.categoryId || '',
+      owner: doc.owner || '',
+      ownerId: doc.ownerId || '',
+      title: doc.title || '',
+      number: doc.number || '',
+      issueDate: doc.issueDate || '',
+      expiryDate: doc.expiryDate || '',
+      storage: doc.storage || '',
+      driveLinksText: driveLinksToText(doc.driveLinks),
+      notes: doc.notes || '',
     })
+
+    if (doc.categoryId) {
+      setExpandedIds((prev) => [...new Set([...prev, doc.categoryId])])
+    }
   }
 
-  const saveEditDocument = (documentId) => {
-    if (!editDocumentForm.title.trim()) {
-      setDocumentError('Il titolo del documento è obbligatorio.')
+  function saveEditDocument(docId) {
+    setDocumentError('')
+
+    const category = categories.find((cat) => cat.id === editingDocumentForm.categoryId)
+    if (!category) {
+      setDocumentError('Categoria non valida.')
       return
     }
 
-    updateArchive((current) => ({
-      ...current,
-      documents: ensureArray(current.documents).map((row) =>
-        row.id === documentId
+    if (!editingDocumentForm.title.trim()) {
+      setDocumentError('Il titolo documento è obbligatorio.')
+      return
+    }
+
+    const driveLinks = textToNormalizedDriveLinks(editingDocumentForm.driveLinksText)
+    const invalid = driveLinks.some((item) => !isValidHttpUrl(item.url))
+    if (invalid) {
+      setDocumentError('Uno o più link non sono validi.')
+      return
+    }
+
+    const ownerMember = familyMembers.find((member) => member.id === editingDocumentForm.ownerId)
+
+    setArchiveTables((prev) => ({
+      ...prev,
+      categories: ensureArray(prev.categories),
+      documents: ensureArray(prev.documents).map((doc) =>
+        doc.id === docId
           ? {
-              ...row,
-              category: editDocumentForm.category,
-              categoryId: editDocumentForm.categoryId,
-              owner: editDocumentForm.owner.trim(),
-              ownerId: editDocumentForm.ownerId,
-              title: editDocumentForm.title.trim(),
-              number: editDocumentForm.number.trim(),
-              issueDate: editDocumentForm.issueDate,
-              expiryDate: editDocumentForm.expiryDate,
-              storage: editDocumentForm.storage.trim(),
-              driveLinks: textToDriveLinks(editDocumentForm.driveLinksText),
-              notes: editDocumentForm.notes.trim(),
+              ...doc,
+              category: category.name,
+              categoryId: category.id,
+              owner: ownerMember?.name || editingDocumentForm.owner.trim(),
+              ownerId: ownerMember?.id || editingDocumentForm.ownerId || '',
+              title: editingDocumentForm.title.trim(),
+              number: editingDocumentForm.number.trim(),
+              issueDate: editingDocumentForm.issueDate,
+              expiryDate: editingDocumentForm.expiryDate,
+              storage: editingDocumentForm.storage.trim(),
+              driveLinks,
+              notes: editingDocumentForm.notes.trim(),
             }
-          : row,
+          : doc,
       ),
+      warranties: ensureArray(prev.warranties),
     }))
 
     setEditingDocumentId('')
-    setEditDocumentForm(emptyDocumentForm)
+    setEditingDocumentForm(emptyDocumentForm)
   }
 
-  const deleteDocument = (documentId) => {
-    updateArchive((current) => ({
-      ...current,
-      documents: ensureArray(current.documents).filter((row) => row.id !== documentId),
+  function deleteDocument(docId) {
+    setArchiveTables((prev) => ({
+      ...prev,
+      categories: ensureArray(prev.categories),
+      documents: ensureArray(prev.documents).filter((doc) => doc.id !== docId),
+      warranties: ensureArray(prev.warranties),
     }))
 
-    if (editingDocumentId === documentId) {
+    if (selectedNodeId === `doc_${docId}`) setSelectedNodeId('')
+    if (editingDocumentId === docId) {
       setEditingDocumentId('')
-      setEditDocumentForm(emptyDocumentForm)
-    }
-  }
-
-  const handleAddWarranty = (event) => {
-    event.preventDefault()
-    setWarrantyError('')
-
-    if (!warrantyForm.item.trim()) {
-      setWarrantyError('Il nome della garanzia o prodotto è obbligatorio.')
-      return
-    }
-
-    updateArchive((current) => ({
-      ...current,
-      warranties: [
-        ...ensureArray(current.warranties),
-        {
-          id: uid('war'),
-          item: warrantyForm.item.trim(),
-          brand: warrantyForm.brand.trim(),
-          purchaseDate: warrantyForm.purchaseDate,
-          expiryDate: warrantyForm.expiryDate,
-          invoiceRef: warrantyForm.invoiceRef.trim(),
-          driveLinks: textToDriveLinks(warrantyForm.driveLinksText),
-          notes: warrantyForm.notes.trim(),
-        },
-      ],
-    }))
-
-    setWarrantyForm(emptyWarrantyForm)
-  }
-
-  const startEditWarranty = (item) => {
-    setEditingWarrantyId(item.id)
-    setEditWarrantyForm({
-      item: item.item || '',
-      brand: item.brand || '',
-      purchaseDate: item.purchaseDate || '',
-      expiryDate: item.expiryDate || '',
-      invoiceRef: item.invoiceRef || '',
-      driveLinksText: driveLinksToText(item.driveLinks),
-      notes: item.notes || '',
-    })
-  }
-
-  const saveEditWarranty = (warrantyId) => {
-    if (!editWarrantyForm.item.trim()) {
-      setWarrantyError('Il nome della garanzia o prodotto è obbligatorio.')
-      return
-    }
-
-    updateArchive((current) => ({
-      ...current,
-      warranties: ensureArray(current.warranties).map((row) =>
-        row.id === warrantyId
-          ? {
-              ...row,
-              item: editWarrantyForm.item.trim(),
-              brand: editWarrantyForm.brand.trim(),
-              purchaseDate: editWarrantyForm.purchaseDate,
-              expiryDate: editWarrantyForm.expiryDate,
-              invoiceRef: editWarrantyForm.invoiceRef.trim(),
-              driveLinks: textToDriveLinks(editWarrantyForm.driveLinksText),
-              notes: editWarrantyForm.notes.trim(),
-            }
-          : row,
-      ),
-    }))
-
-    setEditingWarrantyId('')
-    setEditWarrantyForm(emptyWarrantyForm)
-  }
-
-  const deleteWarranty = (warrantyId) => {
-    updateArchive((current) => ({
-      ...current,
-      warranties: ensureArray(current.warranties).filter((row) => row.id !== warrantyId),
-    }))
-
-    if (editingWarrantyId === warrantyId) {
-      setEditingWarrantyId('')
-      setEditWarrantyForm(emptyWarrantyForm)
+      setEditingDocumentForm(emptyDocumentForm)
     }
   }
 
   if (loadingData) {
     return (
-      <div className="arch-page">
-        <div className="card">
-          <div className="page-title">Archivio</div>
-          <p className="page-subtitle">Sto caricando archivio e anagrafica famiglia.</p>
-        </div>
+      <div className="card">
+        <div className="page-title">Archivio</div>
+        <p className="page-subtitle">Sto caricando archivio e anagrafica famiglia.</p>
       </div>
     )
   }
 
   return (
-    <div className="arch-page">
+    <div className="page-shell archivio-page">
       <style>{`
-        .arch-page {
+        .archivio-page {
           display: grid;
           gap: 14px;
         }
-
-        .arch-stat-grid {
-          display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: 10px;
+        .compact-head {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          align-items: flex-start;
+          flex-wrap: wrap;
         }
-
-        .arch-stat {
-          border-radius: 18px;
-          padding: 14px;
-          border: 1px solid rgba(120, 138, 164, 0.12);
-          background: rgba(255,255,255,0.92);
-          display: grid;
-          gap: 6px;
-        }
-
-        .arch-stat-label {
-          font-size: 11px;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          color: var(--muted, #667085);
-          font-weight: 700;
-        }
-
-        .arch-stat-value {
-          font-size: 28px;
-          line-height: 1;
-          font-weight: 800;
-          color: #0f172a;
-        }
-
-        .arch-stat-note {
-          font-size: 12px;
-          line-height: 1.45;
-          color: var(--muted, #667085);
-        }
-
-        .arch-grid-top {
+        .archive-top-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 14px;
         }
-
-        .arch-grid-main {
+        .archive-mid-grid {
           display: grid;
-          grid-template-columns: 1.1fr 0.9fr;
+          grid-template-columns: 0.95fr 1.05fr;
           gap: 14px;
         }
-
-        .arch-panel,
-        .arch-form-card {
-          border-radius: 22px;
-          border: 1px solid rgba(120, 138, 164, 0.12);
-          background: rgba(255,255,255,0.92);
-          padding: 16px;
-        }
-
-        .arch-section-head {
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 12px;
-          margin-bottom: 14px;
-        }
-
-        .arch-section-title {
-          font-size: 16px;
-          line-height: 1.2;
-          font-weight: 800;
-          color: #0f172a;
-        }
-
-        .arch-section-subtitle {
-          margin-top: 4px;
-          font-size: 12px;
-          line-height: 1.45;
-          color: var(--muted, #667085);
-        }
-
-        .arch-stack {
-          display: grid;
-          gap: 12px;
-        }
-
-        .arch-form-grid {
+        .archive-form-grid {
           display: grid;
           grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 10px;
         }
-
-        .arch-form-grid-3 {
+        .archive-form-grid-3 {
           display: grid;
           grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 10px;
         }
-
-        .arch-list {
+        .archive-form-grid-4 {
           display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
           gap: 10px;
         }
-
-        .arch-item {
-          display: grid;
-          gap: 10px;
-          padding: 12px;
-          border-radius: 16px;
-          background: rgba(248, 250, 252, 0.94);
-          border: 1px solid rgba(120, 138, 164, 0.10);
+        .required-mark {
+          color: #c62828;
+          margin-left: 4px;
         }
-
-        .arch-item-head {
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
+        .section-stack {
+          display: grid;
           gap: 12px;
-          flex-wrap: wrap;
         }
-
-        .arch-item-title {
-          font-size: 14px;
-          line-height: 1.2;
-          font-weight: 700;
-          color: #0f172a;
+        .summary-strip {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 10px;
         }
-
-        .arch-item-subtitle {
-          margin-top: 3px;
-          font-size: 12px;
-          line-height: 1.45;
+        .summary-card {
+          border-radius: 14px;
+          padding: 12px;
+          border: 1px solid rgba(120, 138, 164, 0.14);
+          background: rgba(255,255,255,0.96);
+          display: grid;
+          gap: 4px;
+        }
+        .summary-label {
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: .08em;
           color: var(--muted, #667085);
         }
-
-        .arch-pills {
+        .summary-value {
+          font-size: 22px;
+          font-weight: 800;
+          line-height: 1;
+        }
+        .summary-note {
+          font-size: 12px;
+          color: var(--muted, #667085);
+        }
+        .tree-table {
+          border: 1px solid rgba(120, 138, 164, 0.16);
+          border-radius: 16px;
+          overflow: hidden;
+          background: rgba(255,255,255,0.96);
+        }
+        .tree-toolbar {
+          padding: 10px 12px;
+          border-bottom: 1px solid rgba(120, 138, 164, 0.12);
+          display: flex;
+          justify-content: space-between;
+          gap: 10px;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+        .tree-head,
+        .tree-row {
+          display: grid;
+          grid-template-columns: 2.2fr 1.1fr 1.1fr 1fr 1fr 160px;
+          gap: 10px;
+          align-items: center;
+          padding: 10px 12px;
+        }
+        .tree-head {
+          font-size: 12px;
+          font-weight: 800;
+          color: var(--muted, #667085);
+          background: rgba(248,250,252,0.98);
+          border-bottom: 1px solid rgba(120, 138, 164, 0.12);
+        }
+        .tree-row {
+          font-size: 13px;
+          border-bottom: 1px solid rgba(120, 138, 164, 0.08);
+        }
+        .tree-row:last-child {
+          border-bottom: none;
+        }
+        .tree-row.selected {
+          background: rgba(21,101,192,0.05);
+        }
+        .tree-primary {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          min-width: 0;
+        }
+        .tree-title {
+          font-weight: 800;
+          line-height: 1.2;
+        }
+        .tree-subtitle {
+          font-size: 12px;
+          color: var(--muted, #667085);
+          margin-top: 2px;
+        }
+        .indent-0 {
+          padding-left: 0;
+        }
+        .indent-1 {
+          padding-left: 24px;
+        }
+                    .indent-2 {
+                                padding-left: 48px;
+                                          }
+        .expand-btn {
+          width: 28px;
+          height: 28px;
+          border-radius: 8px;
+          border: 1px solid rgba(120, 138, 164, 0.16);
+          background: white;
+          font-weight: 800;
+        }
+        .row-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
+        .meta-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 6px 10px;
+          border-radius: 999px;
+          background: rgba(31, 41, 55, 0.05);
+          border: 1px solid rgba(120, 138, 164, 0.12);
+          font-size: 12px;
+          font-weight: 600;
+        }
+        .meta-label {
+          color: var(--muted, #667085);
+        }
+        .pill-row {
           display: flex;
           flex-wrap: wrap;
           gap: 6px;
         }
-
-        .arch-pill {
+        .doc-links {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+        .link-chip {
           display: inline-flex;
           align-items: center;
-          min-height: 28px;
-          padding: 5px 10px;
+          gap: 6px;
+          padding: 6px 10px;
           border-radius: 999px;
-          font-size: 11px;
+          background: rgba(21, 101, 192, 0.08);
+          border: 1px solid rgba(21, 101, 192, 0.16);
+          color: #1553a2;
+          text-decoration: none;
           font-weight: 700;
-          color: #475569;
-          background: rgba(255,255,255,0.96);
-          border: 1px solid rgba(120, 138, 164, 0.12);
-        }
-
-        .arch-notes {
-          padding: 9px 10px;
-          border-radius: 12px;
-          background: rgba(255,255,255,0.78);
-          border: 1px dashed rgba(120, 138, 164, 0.18);
-          color: #475569;
           font-size: 12px;
-          line-height: 1.5;
         }
-
-        .arch-actions {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          flex-wrap: wrap;
-        }
-
-        .btn-inline-soft,
         .btn-inline-danger,
+        .btn-inline-soft,
         .btn-inline-ghost {
           min-height: 32px;
           padding: 6px 10px;
@@ -687,138 +911,142 @@ export default function ArchivioPage() {
           font-size: 12px;
           font-weight: 700;
         }
-
-        .btn-inline-soft {
-          border: 1px solid rgba(21, 101, 192, 0.16);
-          background: rgba(21, 101, 192, 0.06);
-          color: #1553a2;
-        }
-
         .btn-inline-danger {
           border: 1px solid rgba(183, 28, 28, 0.18);
           background: rgba(183, 28, 28, 0.06);
           color: #a61b1b;
         }
-
+        .btn-inline-soft {
+          border: 1px solid rgba(21, 101, 192, 0.16);
+          background: rgba(21, 101, 192, 0.06);
+          color: #1553a2;
+        }
         .btn-inline-ghost {
           border: 1px solid rgba(120, 138, 164, 0.16);
-          background: rgba(255,255,255,0.92);
+          background: rgba(255, 255, 255, 0.9);
           color: #334155;
         }
-
-        .arch-empty {
-          border-radius: 16px;
-          padding: 14px;
-          background: rgba(248, 250, 252, 0.86);
-          border: 1px dashed rgba(120, 138, 164, 0.18);
-          color: var(--muted, #667085);
-          font-size: 13px;
-          line-height: 1.5;
-        }
-
-        .arch-toolbar {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          flex-wrap: wrap;
-          margin-bottom: 12px;
-        }
-
-        .arch-toolbar-group {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          flex-wrap: wrap;
-        }
-
-        .arch-tabs button.active {
-          background: var(--brand, #2563eb);
-          color: #fff;
-          border-color: transparent;
-        }
-
         .edit-box {
+          border: 1px solid rgba(21, 101, 192, 0.16);
+          background: rgba(248, 251, 255, 0.96);
           border-radius: 14px;
-          padding: 10px;
-          border: 1px solid rgba(37, 99, 235, 0.14);
-          background: rgba(248, 251, 255, 0.94);
+          padding: 12px;
           display: grid;
           gap: 10px;
         }
-
-        .search-input {
-          min-width: 240px;
+        .family-card-list {
+          display: grid;
+          gap: 10px;
         }
-
-        @media (max-width: 1100px) {
-          .arch-stat-grid,
-          .arch-grid-top,
-          .arch-grid-main,
-          .arch-form-grid,
-          .arch-form-grid-3 {
+        .family-card {
+          border: 1px solid rgba(120, 138, 164, 0.12);
+          background: rgba(255,255,255,0.96);
+          border-radius: 14px;
+          padding: 12px;
+          display: grid;
+          gap: 10px;
+        }
+        .family-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+        .empty-box {
+          border-radius: 12px;
+          padding: 12px;
+          background: rgba(255, 255, 255, 0.72);
+          border: 1px dashed rgba(120, 138, 164, 0.18);
+          color: var(--muted, #667085);
+          font-size: 12px;
+        }
+        @media (max-width: 1180px) {
+          .archive-top-grid,
+          .archive-mid-grid,
+          .summary-strip,
+          .archive-form-grid,
+          .archive-form-grid-3,
+          .archive-form-grid-4,
+          .tree-head,
+          .tree-row {
             grid-template-columns: 1fr;
           }
-
-          .search-input {
-            min-width: 100%;
+          .row-actions {
+            justify-content: flex-start;
           }
         }
       `}</style>
 
-      {syncError ? (
-        <div className="error-msg">Errore di sincronizzazione: {String(syncError)}</div>
-      ) : null}
+      <div className="card">
+        <SectionTitle
+          title="Archivio famiglia V3"
+          subtitle="Tree-table categorie e documenti, modifica inline, compatibile con AppContext attuale."
+        />
 
-      <div className="arch-stat-grid">
-        <div className="arch-stat">
-          <div className="arch-stat-label">Familiari</div>
-          <div className="arch-stat-value">{archiveStats.members}</div>
-          <div className="arch-stat-note">Profili anagrafici gestiti nel Family Hub</div>
-        </div>
-        <div className="arch-stat">
-          <div className="arch-stat-label">Categorie</div>
-          <div className="arch-stat-value">{archiveStats.categories}</div>
-          <div className="arch-stat-note">Sezioni archivio attive</div>
-        </div>
-        <div className="arch-stat">
-          <div className="arch-stat-label">Documenti</div>
-          <div className="arch-stat-value">{archiveStats.documents}</div>
-          <div className="arch-stat-note">Elementi documentali registrati</div>
-        </div>
-        <div className="arch-stat">
-          <div className="arch-stat-label">Garanzie</div>
-          <div className="arch-stat-value">{archiveStats.warranties}</div>
-          <div className="arch-stat-note">Prodotti e coperture archiviate</div>
+        {syncError ? (
+          <div className="error-msg">Errore sincronizzazione: {String(syncError)}</div>
+        ) : null}
+
+        <div className="summary-strip">
+          <div className="summary-card">
+            <div className="summary-label">Familiari</div>
+            <div className="summary-value">{familyMembers.length}</div>
+            <div className="summary-note">Anagrafica disponibile</div>
+          </div>
+
+          <div className="summary-card">
+            <div className="summary-label">Categorie</div>
+            <div className="summary-value">{categories.length}</div>
+            <div className="summary-note">Archivio documentale</div>
+          </div>
+
+          <div className="summary-card">
+            <div className="summary-label">Documenti</div>
+            <div className="summary-value">{documents.length}</div>
+            <div className="summary-note">Gestiti in tabella</div>
+          </div>
+
+          <div className="summary-card">
+            <div className="summary-label">Categoria attiva</div>
+            <div className="summary-value" style={{ fontSize: 16 }}>
+              {categories.find((c) => c.id === selectedCategoryId)?.name || '—'}
+            </div>
+            <div className="summary-note">Filtro inserimento attuale</div>
+          </div>
         </div>
       </div>
 
-      <div className="arch-grid-top">
-        <div className="arch-form-card">
+      <div className="archive-top-grid">
+        <div className="card">
           <SectionTitle
-            title="Nuovo componente famiglia"
-            subtitle="Tutti i campi passano dal context e vengono poi salvati nel payload su Supabase."
+            title="Nuovo familiare"
+            subtitle="Usa addFamilyMember del tuo context."
           />
 
-          <form onSubmit={handleAddMember} className="arch-stack">
-            <div className="arch-form-grid-3">
+          <form onSubmit={handleAddMember} className="section-stack">
+            <div className="archive-form-grid-4">
               <label className="fg">
                 <span className="fl">Iniziali</span>
                 <input
                   className="fi"
                   value={memberForm.initials}
-                  onChange={(e) => handleMemberFormChange('initials', e.target.value)}
-                  placeholder="FC"
+                  onChange={(e) =>
+                    setMemberForm((prev) => ({ ...prev, initials: e.target.value }))
+                  }
                 />
               </label>
 
               <label className="fg">
-                <span className="fl">Nome e cognome*</span>
+                <span className="fl">
+                  Nome<span className="required-mark">*</span>
+                </span>
                 <input
                   className="fi"
                   value={memberForm.name}
-                  onChange={(e) => handleMemberFormChange('name', e.target.value)}
-                  placeholder="Mario Rossi"
+                  onChange={(e) =>
+                    setMemberForm((prev) => ({ ...prev, name: e.target.value }))
+                  }
                 />
               </label>
 
@@ -827,8 +1055,9 @@ export default function ArchivioPage() {
                 <input
                   className="fi"
                   value={memberForm.role}
-                  onChange={(e) => handleMemberFormChange('role', e.target.value)}
-                  placeholder="Papà, Mamma, Figlio/a..."
+                  onChange={(e) =>
+                    setMemberForm((prev) => ({ ...prev, role: e.target.value }))
+                  }
                 />
               </label>
 
@@ -837,37 +1066,21 @@ export default function ArchivioPage() {
                 <input
                   className="fi"
                   value={memberForm.relationship}
-                  onChange={(e) => handleMemberFormChange('relationship', e.target.value)}
-                  placeholder="Padre, Madre..."
+                  onChange={(e) =>
+                    setMemberForm((prev) => ({ ...prev, relationship: e.target.value }))
+                  }
                 />
               </label>
 
               <label className="fg">
-                <span className="fl">Data di nascita</span>
+                <span className="fl">Data nascita</span>
                 <input
                   className="fi"
                   type="date"
                   value={memberForm.birthDate}
-                  onChange={(e) => handleMemberFormChange('birthDate', e.target.value)}
-                />
-              </label>
-
-              <label className="fg">
-                <span className="fl">Gruppo sanguigno</span>
-                <input
-                  className="fi"
-                  value={memberForm.bloodGroup}
-                  onChange={(e) => handleMemberFormChange('bloodGroup', e.target.value)}
-                  placeholder="0+, A-..."
-                />
-              </label>
-
-              <label className="fg">
-                <span className="fl">Codice fiscale</span>
-                <input
-                  className="fi"
-                  value={memberForm.fiscalCode}
-                  onChange={(e) => handleMemberFormChange('fiscalCode', e.target.value)}
+                  onChange={(e) =>
+                    setMemberForm((prev) => ({ ...prev, birthDate: e.target.value }))
+                  }
                 />
               </label>
 
@@ -876,7 +1089,9 @@ export default function ArchivioPage() {
                 <input
                   className="fi"
                   value={memberForm.phone}
-                  onChange={(e) => handleMemberFormChange('phone', e.target.value)}
+                  onChange={(e) =>
+                    setMemberForm((prev) => ({ ...prev, phone: e.target.value }))
+                  }
                 />
               </label>
 
@@ -884,150 +1099,26 @@ export default function ArchivioPage() {
                 <span className="fl">Email</span>
                 <input
                   className="fi"
-                  type="email"
                   value={memberForm.email}
-                  onChange={(e) => handleMemberFormChange('email', e.target.value)}
+                  onChange={(e) =>
+                    setMemberForm((prev) => ({ ...prev, email: e.target.value }))
+                  }
                 />
               </label>
 
               <label className="fg">
-                <span className="fl">Medico</span>
+                <span className="fl">Codice fiscale</span>
                 <input
                   className="fi"
-                  value={memberForm.doctor}
-                  onChange={(e) => handleMemberFormChange('doctor', e.target.value)}
-                />
-              </label>
-
-              <label className="fg">
-                <span className="fl">Pediatra</span>
-                <input
-                  className="fi"
-                  value={memberForm.pediatrician}
-                  onChange={(e) => handleMemberFormChange('pediatrician', e.target.value)}
-                />
-              </label>
-
-              <label className="fg">
-                <span className="fl">ID sanitario</span>
-                <input
-                  className="fi"
-                  value={memberForm.healthId}
-                  onChange={(e) => handleMemberFormChange('healthId', e.target.value)}
+                  value={memberForm.fiscalCode}
+                  onChange={(e) =>
+                    setMemberForm((prev) => ({ ...prev, fiscalCode: e.target.value }))
+                  }
                 />
               </label>
             </div>
 
-            <div className="arch-form-grid">
-              <label className="fg">
-                <span className="fl">Allergie</span>
-                <textarea
-                  className="fi"
-                  rows={2}
-                  value={memberForm.allergies}
-                  onChange={(e) => handleMemberFormChange('allergies', e.target.value)}
-                />
-              </label>
-
-              <label className="fg">
-                <span className="fl">Condizioni croniche</span>
-                <textarea
-                  className="fi"
-                  rows={2}
-                  value={memberForm.chronicConditions}
-                  onChange={(e) => handleMemberFormChange('chronicConditions', e.target.value)}
-                />
-              </label>
-
-              <label className="fg">
-                <span className="fl">Terapie correnti</span>
-                <textarea
-                  className="fi"
-                  rows={2}
-                  value={memberForm.currentTherapies}
-                  onChange={(e) => handleMemberFormChange('currentTherapies', e.target.value)}
-                />
-              </label>
-
-              <label className="fg">
-                <span className="fl">Contatto emergenza</span>
-                <input
-                  className="fi"
-                  value={memberForm.emergencyContact}
-                  onChange={(e) => handleMemberFormChange('emergencyContact', e.target.value)}
-                />
-              </label>
-
-              <label className="fg">
-                <span className="fl">Condizioni</span>
-                <textarea
-                  className="fi"
-                  rows={2}
-                  value={memberForm.conditions}
-                  onChange={(e) => handleMemberFormChange('conditions', e.target.value)}
-                />
-              </label>
-
-              <label className="fg">
-                <span className="fl">Note salute</span>
-                <textarea
-                  className="fi"
-                  rows={2}
-                  value={memberForm.healthNotes}
-                  onChange={(e) => handleMemberFormChange('healthNotes', e.target.value)}
-                />
-              </label>
-            </div>
-
-            <div className="arch-form-grid">
-              <label className="fg">
-                <span className="fl">Carta identità</span>
-                <input
-                  className="fi"
-                  value={memberForm.documents.idCard}
-                  onChange={(e) => handleMemberDocumentChange('idCard', e.target.value)}
-                />
-              </label>
-
-              <label className="fg">
-                <span className="fl">Passaporto</span>
-                <input
-                  className="fi"
-                  value={memberForm.documents.passport}
-                  onChange={(e) => handleMemberDocumentChange('passport', e.target.value)}
-                />
-              </label>
-
-              <label className="fg">
-                <span className="fl">Tessera sanitaria</span>
-                <input
-                  className="fi"
-                  value={memberForm.documents.healthCard}
-                  onChange={(e) => handleMemberDocumentChange('healthCard', e.target.value)}
-                />
-              </label>
-
-              <label className="fg">
-                <span className="fl">Patente</span>
-                <input
-                  className="fi"
-                  value={memberForm.documents.drivingLicense}
-                  onChange={(e) => handleMemberDocumentChange('drivingLicense', e.target.value)}
-                />
-              </label>
-            </div>
-
-            <label className="fg">
-              <span className="fl">Note emergenza</span>
-              <textarea
-                className="fi"
-                rows={3}
-                value={memberForm.emergencyNotes}
-                onChange={(e) => handleMemberFormChange('emergencyNotes', e.target.value)}
-              />
-            </label>
-
-            <FieldError text={memberError} />
+            {memberError ? <div className="error-msg">{memberError}</div> : null}
 
             <div>
               <button type="submit" className="btn btn-p">
@@ -1037,135 +1128,528 @@ export default function ArchivioPage() {
           </form>
         </div>
 
-        <div className="arch-form-card">
+        <div className="card">
           <SectionTitle
-            title="Nuovo elemento archivio"
-            subtitle="Documenti e garanzie usano sempre updateArchive, quindi restano coerenti con autosave e deploy."
+            title="Modifica familiare"
+            subtitle="Il familiare appena creato viene selezionato qui automaticamente."
           />
 
-          <div className="arch-toolbar arch-tabs">
-            <div className="arch-toolbar-group">
-              <button
-                type="button"
-                className={`btn ${archiveView === 'documents' ? 'btn-p active' : ''}`}
-                onClick={() => setArchiveView('documents')}
-              >
-                Documento
-              </button>
-              <button
-                type="button"
-                className={`btn ${archiveView === 'warranties' ? 'btn-p active' : ''}`}
-                onClick={() => setArchiveView('warranties')}
-              >
-                Garanzia
-              </button>
-            </div>
-          </div>
+          {selectedEditingMember ? (
+            <div className="section-stack">
+              <div className="pill-row">
+                <div className="meta-pill">
+                  <span className="meta-label">In modifica:</span>{' '}
+                  {selectedEditingMember.name || selectedEditingMember.initials || selectedEditingMember.id}
+                </div>
+              </div>
 
-          {archiveView === 'documents' ? (
-            <form onSubmit={handleAddDocument} className="arch-stack">
-              <div className="arch-form-grid-3">
+              <div className="archive-form-grid-4">
                 <label className="fg">
-                  <span className="fl">Categoria</span>
-                  <select
-                    className="fi"
-                    value={documentForm.categoryId}
-                    onChange={(e) => {
-                      const category = categories.find((item) => item.id === e.target.value)
-                      setDocumentForm((prev) => ({
-                        ...prev,
-                        categoryId: e.target.value,
-                        category: category?.name || '',
-                      }))
-                    }}
-                  >
-                    {categories.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="fg">
-                  <span className="fl">Proprietario</span>
-                  <select
-                    className="fi"
-                    value={documentForm.ownerId}
-                    onChange={(e) => {
-                      const owner = members.find((item) => item.id === e.target.value)
-                      setDocumentForm((prev) => ({
-                        ...prev,
-                        ownerId: e.target.value,
-                        owner: owner?.name || '',
-                      }))
-                    }}
-                  >
-                    <option value="">Nessuno</option>
-                    {members.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name || item.role || item.initials}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="fg">
-                  <span className="fl">Titolo*</span>
+                  <span className="fl">Iniziali</span>
                   <input
                     className="fi"
-                    value={documentForm.title}
-                    onChange={(e) => setDocumentForm((prev) => ({ ...prev, title: e.target.value }))}
+                    value={editingMemberForm.initials}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({ ...prev, initials: e.target.value }))
+                    }
                   />
                 </label>
 
                 <label className="fg">
-                  <span className="fl">Numero</span>
+                  <span className="fl">
+                    Nome<span className="required-mark">*</span>
+                  </span>
                   <input
                     className="fi"
-                    value={documentForm.number}
-                    onChange={(e) => setDocumentForm((prev) => ({ ...prev, number: e.target.value }))}
+                    value={editingMemberForm.name}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({ ...prev, name: e.target.value }))
+                    }
                   />
                 </label>
 
                 <label className="fg">
-                  <span className="fl">Data rilascio</span>
+                  <span className="fl">Ruolo</span>
+                  <input
+                    className="fi"
+                    value={editingMemberForm.role}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({ ...prev, role: e.target.value }))
+                    }
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Relazione</span>
+                  <input
+                    className="fi"
+                    value={editingMemberForm.relationship}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({
+                        ...prev,
+                        relationship: e.target.value,
+                      }))
+                    }
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Data nascita</span>
                   <input
                     className="fi"
                     type="date"
-                    value={documentForm.issueDate}
-                    onChange={(e) => setDocumentForm((prev) => ({ ...prev, issueDate: e.target.value }))}
+                    value={editingMemberForm.birthDate}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({ ...prev, birthDate: e.target.value }))
+                    }
                   />
                 </label>
 
                 <label className="fg">
-                  <span className="fl">Scadenza</span>
+                  <span className="fl">Gruppo sanguigno</span>
                   <input
                     className="fi"
-                    type="date"
-                    value={documentForm.expiryDate}
-                    onChange={(e) => setDocumentForm((prev) => ({ ...prev, expiryDate: e.target.value }))}
+                    value={editingMemberForm.bloodGroup}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({ ...prev, bloodGroup: e.target.value }))
+                    }
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Telefono</span>
+                  <input
+                    className="fi"
+                    value={editingMemberForm.phone}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({ ...prev, phone: e.target.value }))
+                    }
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Email</span>
+                  <input
+                    className="fi"
+                    value={editingMemberForm.email}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({ ...prev, email: e.target.value }))
+                    }
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Codice fiscale</span>
+                  <input
+                    className="fi"
+                    value={editingMemberForm.fiscalCode}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({ ...prev, fiscalCode: e.target.value }))
+                    }
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Medico</span>
+                  <input
+                    className="fi"
+                    value={editingMemberForm.doctor}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({ ...prev, doctor: e.target.value }))
+                    }
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Pediatra</span>
+                  <input
+                    className="fi"
+                    value={editingMemberForm.pediatrician}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({ ...prev, pediatrician: e.target.value }))
+                    }
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Tessera sanitaria</span>
+                  <input
+                    className="fi"
+                    value={editingMemberForm.healthId}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({ ...prev, healthId: e.target.value }))
+                    }
                   />
                 </label>
               </div>
 
+              <div className="archive-form-grid">
+                <label className="fg">
+                  <span className="fl">Allergie</span>
+                  <textarea
+                    className="fi"
+                    rows={3}
+                    value={editingMemberForm.allergies}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({ ...prev, allergies: e.target.value }))
+                    }
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Patologie croniche</span>
+                  <textarea
+                    className="fi"
+                    rows={3}
+                    value={editingMemberForm.chronicConditions}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({
+                        ...prev,
+                        chronicConditions: e.target.value,
+                      }))
+                    }
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Terapie correnti</span>
+                  <textarea
+                    className="fi"
+                    rows={3}
+                    value={editingMemberForm.currentTherapies}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({
+                        ...prev,
+                        currentTherapies: e.target.value,
+                      }))
+                    }
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Contatto emergenza</span>
+                  <textarea
+                    className="fi"
+                    rows={3}
+                    value={editingMemberForm.emergencyContact}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({
+                        ...prev,
+                        emergencyContact: e.target.value,
+                      }))
+                    }
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Condizioni</span>
+                  <textarea
+                    className="fi"
+                    rows={3}
+                    value={editingMemberForm.conditions}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({ ...prev, conditions: e.target.value }))
+                    }
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Note sanitarie</span>
+                  <textarea
+                    className="fi"
+                    rows={3}
+                    value={editingMemberForm.healthNotes}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({ ...prev, healthNotes: e.target.value }))
+                    }
+                  />
+                </label>
+              </div>
+
+              <div className="archive-form-grid-4">
+                <label className="fg">
+                  <span className="fl">Documento identità</span>
+                  <input
+                    className="fi"
+                    value={editingMemberForm.documents.idCard}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({
+                        ...prev,
+                        documents: { ...prev.documents, idCard: e.target.value },
+                      }))
+                    }
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Passaporto</span>
+                  <input
+                    className="fi"
+                    value={editingMemberForm.documents.passport}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({
+                        ...prev,
+                        documents: { ...prev.documents, passport: e.target.value },
+                      }))
+                    }
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Tessera sanitaria n.</span>
+                  <input
+                    className="fi"
+                    value={editingMemberForm.documents.healthCard}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({
+                        ...prev,
+                        documents: { ...prev.documents, healthCard: e.target.value },
+                      }))
+                    }
+                  />
+                </label>
+
+                <label className="fg">
+                  <span className="fl">Patente</span>
+                  <input
+                    className="fi"
+                    value={editingMemberForm.documents.drivingLicense}
+                    onChange={(e) =>
+                      setEditingMemberForm((prev) => ({
+                        ...prev,
+                        documents: { ...prev.documents, drivingLicense: e.target.value },
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+
+              <div className="row-actions" style={{ justifyContent: 'flex-start' }}>
+                <button
+                  type="button"
+                  className="btn btn-inline-soft"
+                  onClick={saveEditMember}
+                >
+                  Salva
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-inline-ghost"
+                  onClick={cancelEditMember}
+                >
+                  Chiudi
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="empty-box">
+              Seleziona un familiare dall’elenco oppure aggiungine uno nuovo.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="archive-mid-grid">
+        <div className="card">
+          <SectionTitle
+            title="Nuova categoria"
+            subtitle="Create/edit/delete categorie dell'archivio."
+          />
+
+          <form onSubmit={handleAddCategory} className="section-stack">
+            <div className="archive-form-grid">
               <label className="fg">
-                <span className="fl">Posizione / storage</span>
+                <span className="fl">
+                  Nome categoria<span className="required-mark">*</span>
+                </span>
                 <input
                   className="fi"
-                  value={documentForm.storage}
-                  onChange={(e) => setDocumentForm((prev) => ({ ...prev, storage: e.target.value }))}
-                  placeholder="Cassaforte, cassetto, Drive, cartella..."
+                  value={categoryForm.name}
+                  onChange={(e) =>
+                    setCategoryForm((prev) => ({ ...prev, name: e.target.value }))
+                  }
+                  placeholder="Es. Assicurazioni"
                 />
               </label>
 
               <label className="fg">
-                <span className="fl">Link Drive / URL, uno per riga</span>
+                <span className="fl">Tipo</span>
+                <select
+                  className="fi"
+                  value={categoryForm.kind}
+                  onChange={(e) =>
+                    setCategoryForm((prev) => ({ ...prev, kind: e.target.value }))
+                  }
+                >
+                  <option value="standard">standard</option>
+                  <option value="table">table</option>
+                </select>
+              </label>
+            </div>
+                      <div className="fg">
+            <label className="fl">Categoria padre</label>
+            <select
+              className="fi"
+              value={categoryForm.parentId}
+              onChange={(e) => setCategoryForm((prev) => ({ ...prev, parentId: e.target.value }))}
+            >
+              <option value="">— Nessuna (radice) —</option>
+              {categories
+                .filter((c) => !c.parentId)
+                .map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+            </select>
+          </div>
+
+            {categoryError ? <div className="error-msg">{categoryError}</div> : null}
+
+            <div>
+              <button type="submit" className="btn btn-p">
+                Aggiungi categoria
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div className="card">
+          <SectionTitle
+            title="Nuovo documento"
+            subtitle="Salva direttamente in archiveTables.documents."
+          />
+
+          <form onSubmit={handleAddDocument} className="section-stack">
+            <div className="archive-form-grid-4">
+              <label className="fg">
+                <span className="fl">Categoria</span>
+                <select
+                  className="fi"
+                  value={documentForm.categoryId}
+                  onChange={(e) => {
+                    const cat = categories.find((row) => row.id === e.target.value)
+                    setDocumentForm((prev) => ({
+                      ...prev,
+                      categoryId: e.target.value,
+                      category: cat?.name || '',
+                    }))
+                    setSelectedCategoryId(e.target.value)
+                  }}
+                >
+                  <option value="">Seleziona categoria</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                                {cat.parentId ? `  ↳ ${cat.name}` : cat.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="fg">
+                <span className="fl">Proprietario</span>
+                <select
+                  className="fi"
+                  value={documentForm.ownerId}
+                  onChange={(e) => {
+                    const member = familyMembers.find((m) => m.id === e.target.value)
+                    setDocumentForm((prev) => ({
+                      ...prev,
+                      ownerId: e.target.value,
+                      owner: member?.name || '',
+                    }))
+                  }}
+                >
+                  <option value="">Nessun proprietario</option>
+                  {familyMembers.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.name || member.role || member.initials || member.id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="fg">
+                <span className="fl">
+                  Titolo documento<span className="required-mark">*</span>
+                </span>
+                <input
+                  className="fi"
+                  value={documentForm.title}
+                  onChange={(e) =>
+                    setDocumentForm((prev) => ({ ...prev, title: e.target.value }))
+                  }
+                />
+              </label>
+
+              <label className="fg">
+                <span className="fl">Numero</span>
+                <input
+                  className="fi"
+                  value={documentForm.number}
+                  onChange={(e) =>
+                    setDocumentForm((prev) => ({ ...prev, number: e.target.value }))
+                  }
+                />
+              </label>
+
+              <label className="fg">
+                <span className="fl">Data emissione</span>
+                <input
+                  className="fi"
+                  type="date"
+                  value={documentForm.issueDate}
+                  onChange={(e) =>
+                    setDocumentForm((prev) => ({ ...prev, issueDate: e.target.value }))
+                  }
+                />
+              </label>
+
+              <label className="fg">
+                <span className="fl">Scadenza</span>
+                <input
+                  className="fi"
+                  type="date"
+                  value={documentForm.expiryDate}
+                  onChange={(e) =>
+                    setDocumentForm((prev) => ({ ...prev, expiryDate: e.target.value }))
+                  }
+                />
+              </label>
+
+              <label className="fg">
+                <span className="fl">Posizione archivio</span>
+                <input
+                  className="fi"
+                  value={documentForm.storage}
+                  onChange={(e) =>
+                    setDocumentForm((prev) => ({ ...prev, storage: e.target.value }))
+                  }
+                />
+              </label>
+
+              <label className="fg">
+                <span className="fl">Owner manuale</span>
+                <input
+                  className="fi"
+                  value={documentForm.owner}
+                  onChange={(e) =>
+                    setDocumentForm((prev) => ({ ...prev, owner: e.target.value }))
+                  }
+                  placeholder="Usato se non selezioni un familiare"
+                />
+              </label>
+            </div>
+
+            <div className="archive-form-grid">
+              <label className="fg">
+                <span className="fl">Link Drive / cloud</span>
                 <textarea
                   className="fi"
                   rows={3}
                   value={documentForm.driveLinksText}
-                  onChange={(e) => setDocumentForm((prev) => ({ ...prev, driveLinksText: e.target.value }))}
+                  onChange={(e) =>
+                    setDocumentForm((prev) => ({ ...prev, driveLinksText: e.target.value }))
+                  }
+                  placeholder={'Un link per riga\ndrive.google.com/...'}
                 />
               </label>
 
@@ -1175,551 +1659,311 @@ export default function ArchivioPage() {
                   className="fi"
                   rows={3}
                   value={documentForm.notes}
-                  onChange={(e) => setDocumentForm((prev) => ({ ...prev, notes: e.target.value }))}
+                  onChange={(e) =>
+                    setDocumentForm((prev) => ({ ...prev, notes: e.target.value }))
+                  }
                 />
               </label>
+            </div>
 
-              <FieldError text={documentError} />
+            {documentError ? <div className="error-msg">{documentError}</div> : null}
 
-              <div>
-                <button type="submit" className="btn btn-p">
-                  Salva documento
-                </button>
+            <div>
+              <button type="submit" className="btn btn-p">
+                Aggiungi documento
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div className="card">
+        <SectionTitle
+          title="Familiari attuali"
+          subtitle="Anagrafica letta dal tuo AppContext."
+        />
+
+        <div className="family-card-list">
+          {familyMembers.length ? (
+            familyMembers.map((member) => (
+              <div key={member.id} className="family-card">
+                <div className="family-head">
+                  <div>
+                    <div className="tree-title">{member.name || 'Senza nome'}</div>
+                    <div className="tree-subtitle">
+                      {member.role || member.relationship || member.initials || member.id}
+                    </div>
+                  </div>
+
+                  <div className="row-actions">
+                    <button
+                      type="button"
+                      className="btn btn-inline-soft"
+                      onClick={() => startEditMember(member)}
+                    >
+                      Modifica
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn btn-inline-danger"
+                      onClick={() => handleDeleteMember(member)}
+                    >
+                      Elimina
+                    </button>
+                  </div>
+                </div>
+
+                <div className="pill-row">
+                  <MetaPill label="Telefono" value={member.phone} />
+                  <MetaPill label="Email" value={member.email} />
+                  <MetaPill label="CF" value={member.fiscalCode} />
+                  <MetaPill label="Tessera sanitaria" value={member.healthId} />
+                </div>
               </div>
-            </form>
+            ))
           ) : (
-            <form onSubmit={handleAddWarranty} className="arch-stack">
-              <div className="arch-form-grid">
-                <label className="fg">
-                  <span className="fl">Prodotto / bene*</span>
-                  <input
-                    className="fi"
-                    value={warrantyForm.item}
-                    onChange={(e) => setWarrantyForm((prev) => ({ ...prev, item: e.target.value }))}
-                  />
-                </label>
-
-                <label className="fg">
-                  <span className="fl">Brand</span>
-                  <input
-                    className="fi"
-                    value={warrantyForm.brand}
-                    onChange={(e) => setWarrantyForm((prev) => ({ ...prev, brand: e.target.value }))}
-                  />
-                </label>
-
-                <label className="fg">
-                  <span className="fl">Data acquisto</span>
-                  <input
-                    className="fi"
-                    type="date"
-                    value={warrantyForm.purchaseDate}
-                    onChange={(e) => setWarrantyForm((prev) => ({ ...prev, purchaseDate: e.target.value }))}
-                  />
-                </label>
-
-                <label className="fg">
-                  <span className="fl">Scadenza garanzia</span>
-                  <input
-                    className="fi"
-                    type="date"
-                    value={warrantyForm.expiryDate}
-                    onChange={(e) => setWarrantyForm((prev) => ({ ...prev, expiryDate: e.target.value }))}
-                  />
-                </label>
-
-                <label className="fg">
-                  <span className="fl">Riferimento fattura</span>
-                  <input
-                    className="fi"
-                    value={warrantyForm.invoiceRef}
-                    onChange={(e) => setWarrantyForm((prev) => ({ ...prev, invoiceRef: e.target.value }))}
-                  />
-                </label>
-              </div>
-
-              <label className="fg">
-                <span className="fl">Link Drive / URL, uno per riga</span>
-                <textarea
-                  className="fi"
-                  rows={3}
-                  value={warrantyForm.driveLinksText}
-                  onChange={(e) => setWarrantyForm((prev) => ({ ...prev, driveLinksText: e.target.value }))}
-                />
-              </label>
-
-              <label className="fg">
-                <span className="fl">Note</span>
-                <textarea
-                  className="fi"
-                  rows={3}
-                  value={warrantyForm.notes}
-                  onChange={(e) => setWarrantyForm((prev) => ({ ...prev, notes: e.target.value }))}
-                />
-              </label>
-
-              <FieldError text={warrantyError} />
-
-              <div>
-                <button type="submit" className="btn btn-p">
-                  Salva garanzia
-                </button>
-              </div>
-            </form>
+            <div className="empty-box">Nessun familiare presente.</div>
           )}
         </div>
       </div>
 
-      <div className="arch-grid-main">
-        <div className="arch-panel">
-          <SectionTitle
-            title="Componenti famiglia"
-            subtitle="CRUD completo sui membri, passando sempre dal provider reale."
-            action={
-              <input
-                className="fi search-input"
-                value={memberSearch}
-                onChange={(e) => setMemberSearch(e.target.value)}
-                placeholder="Cerca per nome, ruolo, email..."
-              />
-            }
-          />
-
-          {filteredMembers.length ? (
-            <div className="arch-list">
-              {filteredMembers.map((member) => (
-                <div key={member.id} className="arch-item">
-                  {editingMemberId === member.id ? (
-                    <div className="edit-box">
-                      <div className="arch-form-grid-3">
-                        <label className="fg">
-                          <span className="fl">Iniziali</span>
-                          <input
-                            className="fi"
-                            value={editMemberForm.initials}
-                            onChange={(e) =>
-                              setEditMemberForm((prev) => ({ ...prev, initials: e.target.value }))
-                            }
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Nome*</span>
-                          <input
-                            className="fi"
-                            value={editMemberForm.name}
-                            onChange={(e) =>
-                              setEditMemberForm((prev) => ({ ...prev, name: e.target.value }))
-                            }
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Ruolo</span>
-                          <input
-                            className="fi"
-                            value={editMemberForm.role}
-                            onChange={(e) =>
-                              setEditMemberForm((prev) => ({ ...prev, role: e.target.value }))
-                            }
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Relazione</span>
-                          <input
-                            className="fi"
-                            value={editMemberForm.relationship}
-                            onChange={(e) =>
-                              setEditMemberForm((prev) => ({
-                                ...prev,
-                                relationship: e.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Nascita</span>
-                          <input
-                            className="fi"
-                            type="date"
-                            value={editMemberForm.birthDate}
-                            onChange={(e) =>
-                              setEditMemberForm((prev) => ({
-                                ...prev,
-                                birthDate: e.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Gruppo sanguigno</span>
-                          <input
-                            className="fi"
-                            value={editMemberForm.bloodGroup}
-                            onChange={(e) =>
-                              setEditMemberForm((prev) => ({
-                                ...prev,
-                                bloodGroup: e.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Codice fiscale</span>
-                          <input
-                            className="fi"
-                            value={editMemberForm.fiscalCode}
-                            onChange={(e) =>
-                              setEditMemberForm((prev) => ({
-                                ...prev,
-                                fiscalCode: e.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Telefono</span>
-                          <input
-                            className="fi"
-                            value={editMemberForm.phone}
-                            onChange={(e) =>
-                              setEditMemberForm((prev) => ({ ...prev, phone: e.target.value }))
-                            }
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Email</span>
-                          <input
-                            className="fi"
-                            value={editMemberForm.email}
-                            onChange={(e) =>
-                              setEditMemberForm((prev) => ({ ...prev, email: e.target.value }))
-                            }
-                          />
-                        </label>
-                      </div>
-
-                      <div className="arch-form-grid">
-                        <label className="fg">
-                          <span className="fl">Medico</span>
-                          <input
-                            className="fi"
-                            value={editMemberForm.doctor}
-                            onChange={(e) =>
-                              setEditMemberForm((prev) => ({ ...prev, doctor: e.target.value }))
-                            }
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Pediatra</span>
-                          <input
-                            className="fi"
-                            value={editMemberForm.pediatrician}
-                            onChange={(e) =>
-                              setEditMemberForm((prev) => ({
-                                ...prev,
-                                pediatrician: e.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">ID sanitario</span>
-                          <input
-                            className="fi"
-                            value={editMemberForm.healthId}
-                            onChange={(e) =>
-                              setEditMemberForm((prev) => ({ ...prev, healthId: e.target.value }))
-                            }
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Contatto emergenza</span>
-                          <input
-                            className="fi"
-                            value={editMemberForm.emergencyContact}
-                            onChange={(e) =>
-                              setEditMemberForm((prev) => ({
-                                ...prev,
-                                emergencyContact: e.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-                      </div>
-
-                      <div className="arch-form-grid">
-                        <label className="fg">
-                          <span className="fl">Allergie</span>
-                          <textarea
-                            className="fi"
-                            rows={2}
-                            value={editMemberForm.allergies}
-                            onChange={(e) =>
-                              setEditMemberForm((prev) => ({
-                                ...prev,
-                                allergies: e.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Condizioni croniche</span>
-                          <textarea
-                            className="fi"
-                            rows={2}
-                            value={editMemberForm.chronicConditions}
-                            onChange={(e) =>
-                              setEditMemberForm((prev) => ({
-                                ...prev,
-                                chronicConditions: e.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Terapie correnti</span>
-                          <textarea
-                            className="fi"
-                            rows={2}
-                            value={editMemberForm.currentTherapies}
-                            onChange={(e) =>
-                              setEditMemberForm((prev) => ({
-                                ...prev,
-                                currentTherapies: e.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Condizioni</span>
-                          <textarea
-                            className="fi"
-                            rows={2}
-                            value={editMemberForm.conditions}
-                            onChange={(e) =>
-                              setEditMemberForm((prev) => ({
-                                ...prev,
-                                conditions: e.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Note salute</span>
-                          <textarea
-                            className="fi"
-                            rows={2}
-                            value={editMemberForm.healthNotes}
-                            onChange={(e) =>
-                              setEditMemberForm((prev) => ({
-                                ...prev,
-                                healthNotes: e.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Note emergenza</span>
-                          <textarea
-                            className="fi"
-                            rows={2}
-                            value={editMemberForm.emergencyNotes}
-                            onChange={(e) =>
-                              setEditMemberForm((prev) => ({
-                                ...prev,
-                                emergencyNotes: e.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-                      </div>
-
-                      <div className="arch-form-grid">
-                        <label className="fg">
-                          <span className="fl">Carta identità</span>
-                          <input
-                            className="fi"
-                            value={editMemberForm.documents.idCard}
-                            onChange={(e) => handleMemberDocumentChange('idCard', e.target.value, 'edit')}
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Passaporto</span>
-                          <input
-                            className="fi"
-                            value={editMemberForm.documents.passport}
-                            onChange={(e) => handleMemberDocumentChange('passport', e.target.value, 'edit')}
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Tessera sanitaria</span>
-                          <input
-                            className="fi"
-                            value={editMemberForm.documents.healthCard}
-                            onChange={(e) => handleMemberDocumentChange('healthCard', e.target.value, 'edit')}
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Patente</span>
-                          <input
-                            className="fi"
-                            value={editMemberForm.documents.drivingLicense}
-                            onChange={(e) => handleMemberDocumentChange('drivingLicense', e.target.value, 'edit')}
-                          />
-                        </label>
-                      </div>
-
-                      <div className="arch-actions">
-                        <button
-                          type="button"
-                          className="btn-inline-soft"
-                          onClick={() => saveEditMember(member.id)}
-                        >
-                          Salva
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-inline-ghost"
-                          onClick={() => {
-                            setEditingMemberId('')
-                            setEditMemberForm(emptyMemberForm)
-                          }}
-                        >
-                          Annulla
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="arch-item-head">
-                        <div>
-                          <div className="arch-item-title">
-                            {member.name || 'Familiare'}
-                            {member.initials ? ` · ${member.initials}` : ''}
-                          </div>
-                          <div className="arch-item-subtitle">
-                            {member.role || 'Ruolo non indicato'}
-                            {member.relationship ? ` · ${member.relationship}` : ''}
-                            {member.birthDate ? ` · ${formatDate(member.birthDate)}` : ''}
-                          </div>
-                        </div>
-
-                        <div className="arch-actions">
-                          <button
-                            type="button"
-                            className="btn-inline-soft"
-                            onClick={() => startEditMember(member)}
-                          >
-                            Modifica
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-inline-danger"
-                            onClick={() => handleDeleteMember(member.id)}
-                          >
-                            Elimina
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="arch-pills">
-                        <div className="arch-pill">Telefono: {member.phone || '—'}</div>
-                        <div className="arch-pill">Email: {member.email || '—'}</div>
-                        <div className="arch-pill">CF: {member.fiscalCode || '—'}</div>
-                        <div className="arch-pill">Farmaci: {ensureArray(member.medications).length}</div>
-                      </div>
-
-                      {(member.allergies ||
-                        member.chronicConditions ||
-                        member.currentTherapies ||
-                        member.healthNotes ||
-                        member.emergencyNotes) ? (
-                        <div className="arch-notes">
-                          {member.allergies ? `Allergie: ${member.allergies}. ` : ''}
-                          {member.chronicConditions ? `Condizioni croniche: ${member.chronicConditions}. ` : ''}
-                          {member.currentTherapies ? `Terapie: ${member.currentTherapies}. ` : ''}
-                          {member.healthNotes ? `Note salute: ${member.healthNotes}. ` : ''}
-                          {member.emergencyNotes ? `Emergenza: ${member.emergencyNotes}.` : ''}
-                        </div>
-                      ) : null}
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="arch-empty">Nessun familiare trovato.</div>
-          )}
-        </div>
-
-        <div className="arch-panel">
-          <SectionTitle
-            title="Archivio corrente"
-            subtitle="Documenti e garanzie modificabili inline, sempre passando dal context."
-          />
-
-          <div className="arch-toolbar arch-tabs">
-            <div className="arch-toolbar-group">
+      <div className="card">
+        <SectionTitle
+          title="Tree-table archivio"
+          subtitle="Categorie espandibili e documenti modificabili inline."
+          action={
+            <div className="row-actions">
               <button
                 type="button"
-                className={`btn ${archiveView === 'documents' ? 'btn-p active' : ''}`}
-                onClick={() => setArchiveView('documents')}
+                className="btn btn-inline-ghost"
+                onClick={() => setExpandedIds(categories.map((c) => c.id))}
               >
-                Documenti
+                Espandi tutto
               </button>
               <button
                 type="button"
-                className={`btn ${archiveView === 'warranties' ? 'btn-p active' : ''}`}
-                onClick={() => setArchiveView('warranties')}
+                className="btn btn-inline-ghost"
+                onClick={() => setExpandedIds([])}
               >
-                Garanzie
+                Chiudi tutto
               </button>
             </div>
+          }
+        />
+
+        <div className="tree-table">
+          <div className="tree-toolbar">
+            <div className="pill-row">
+              <span className="meta-pill">
+                <span className="meta-label">Filtro</span>
+                {categories.find((c) => c.id === selectedCategoryId)?.name || 'Tutte'}
+              </span>
+              <span className="meta-pill">
+                <span className="meta-label">Documenti visibili</span>
+                {visibleDocuments.length}
+              </span>
+            </div>
+
+            <label className="fg" style={{ minWidth: 260 }}>
+              <span className="fl">Categoria attiva</span>
+              <select
+                className="fi"
+                value={selectedCategoryId}
+                onChange={(e) => setSelectedCategoryId(e.target.value)}
+              >
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                              {cat.parentId ? `  ↳ ${cat.name}` : cat.name}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
-          {archiveView === 'documents' ? (
-            documents.length ? (
-              <div className="arch-list">
-                {documents.map((item) => (
-                  <div key={item.id} className="arch-item">
-                    {editingDocumentId === item.id ? (
-                      <div className="edit-box">
-                        <div className="arch-form-grid-3">
+          <div className="tree-head">
+            <div>Voce</div>
+            <div>Proprietario / Tipo</div>
+            <div>Numero / Count</div>
+            <div>Emissione</div>
+            <div>Scadenza</div>
+            <div style={{ textAlign: 'right' }}>Azioni</div>
+          </div>
+
+          {treeRows.length ? (
+            treeRows.map((row) => {
+              if (row.type === 'category') {
+                const category = row.payload
+                const isExpanded = expandedIds.includes(category.id)
+                const nextDays = daysToExpiry(category.nextExpiry)
+                const badge = expiryBadge(nextDays)
+
+                return (
+                  <div
+                    key={row.id}
+                    className={`tree-row ${selectedNodeId === row.id ? 'selected' : ''}`}
+                    onClick={() => setSelectedNodeId(row.id)}
+                  >
+                              <div className={`tree-primary ${category.isChild ? 'indent-1' : 'indent-0'}`}>
+                      <button
+                        type="button"
+                        className="expand-btn"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleExpanded(category.id)
+                        }}
+                      >
+                        {isExpanded ? '−' : '+'}
+                      </button>
+
+                      {editingCategoryId === category.id ? (
+                        <div className="edit-box" style={{ width: '100%' }}>
+                          <div className="archive-form-grid">
+                            <label className="fg">
+                              <span className="fl">Nome</span>
+                              <input
+                                className="fi"
+                                value={editingCategoryForm.name}
+                                onChange={(e) =>
+                                  setEditingCategoryForm((prev) => ({
+                                    ...prev,
+                                    name: e.target.value,
+                                  }))
+                                }
+                              />
+                            </label>
+
+                            <label className="fg">
+                              <span className="fl">Tipo</span>
+                              <select
+                                className="fi"
+                                value={editingCategoryForm.kind}
+                                onChange={(e) =>
+                                  setEditingCategoryForm((prev) => ({
+                                    ...prev,
+                                    kind: e.target.value,
+                                  }))
+                                }
+                              >
+                                <option value="standard">standard</option>
+                                <option value="table">table</option>
+                              </select>
+                            </label>
+                          </div>
+                                      <label className="fg">
+              <span className="fl">Categoria padre</span>
+              <select
+                className="fi"
+                value={editingCategoryForm.parentId || ''}
+                onChange={(e) => setEditingCategoryForm((prev) => ({ ...prev, parentId: e.target.value }))}
+              >
+                <option value="">— Nessuna (radice) —</option>
+                {categories
+                  .filter((c) => !c.parentId && c.id !== editingCategoryId)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+              </select>
+            </label>
+
+                          <div className="row-actions" style={{ justifyContent: 'flex-start' }}>
+                            <button
+                              type="button"
+                              className="btn btn-inline-soft"
+                              onClick={() => saveEditCategory(category.id)}
+                            >
+                              Salva
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-inline-ghost"
+                              onClick={() => {
+                                setEditingCategoryId('')
+                                setEditingCategoryForm(emptyCategoryForm)
+                              }}
+                            >
+                              Annulla
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="tree-title">{category.name}</div>
+                          <div className="tree-subtitle">
+                            Categoria archivio · {category.kind || 'standard'}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div>{category.kind || 'standard'}</div>
+                    <div>{category.count}</div>
+                    <div>—</div>
+                    <div>
+                      {category.nextExpiry ? (
+                        <span className={`badge ${badge.className}`}>
+                          {formatDate(category.nextExpiry)} · {badge.label}
+                        </span>
+                      ) : '—'}
+                    </div>
+                    <div className="row-actions">
+                      <button
+                        type="button"
+                        className="btn btn-inline-soft"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          startEditCategory(category)
+                        }}
+                      >
+                        Modifica
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-inline-danger"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          deleteCategorySafe(category.id)
+                        }}
+                      >
+                        Elimina
+                      </button>
+                    </div>
+                  </div>
+                )
+              }
+
+              const doc = row.payload
+              const days = daysToExpiry(doc.expiryDate)
+              const badge = expiryBadge(days)
+
+              return (
+                <div
+                  key={row.id}
+                  className={`tree-row ${selectedNodeId === row.id ? 'selected' : ''}`}
+                  onClick={() => setSelectedNodeId(row.id)}
+                >
+                            <div className={`tree-primary ${categories.find((c) => c.id === row.categoryId)?.parentId ? 'indent-2' : 'indent-1'}`}>
+                    {editingDocumentId === doc.id ? (
+                      <div className="edit-box" style={{ width: '100%' }}>
+                        <div className="archive-form-grid-4">
                           <label className="fg">
                             <span className="fl">Categoria</span>
                             <select
                               className="fi"
-                              value={editDocumentForm.categoryId}
+                              value={editingDocumentForm.categoryId}
                               onChange={(e) => {
-                                const category = categories.find((row) => row.id === e.target.value)
-                                setEditDocumentForm((prev) => ({
+                                const cat = categories.find((row) => row.id === e.target.value)
+                                setEditingDocumentForm((prev) => ({
                                   ...prev,
                                   categoryId: e.target.value,
-                                  category: category?.name || '',
+                                  category: cat?.name || '',
                                 }))
                               }}
                             >
-                              {categories.map((row) => (
-                                <option key={row.id} value={row.id}>
-                                  {row.name}
+                              <option value="">Seleziona categoria</option>
+                              {categories.map((cat) => (
+                                <option key={cat.id} value={cat.id}>
+                                            {cat.parentId ? `  ↳ ${cat.name}` : cat.name}
                                 </option>
                               ))}
                             </select>
@@ -1729,32 +1973,35 @@ export default function ArchivioPage() {
                             <span className="fl">Proprietario</span>
                             <select
                               className="fi"
-                              value={editDocumentForm.ownerId}
+                              value={editingDocumentForm.ownerId}
                               onChange={(e) => {
-                                const owner = members.find((row) => row.id === e.target.value)
-                                setEditDocumentForm((prev) => ({
+                                const member = familyMembers.find((m) => m.id === e.target.value)
+                                setEditingDocumentForm((prev) => ({
                                   ...prev,
                                   ownerId: e.target.value,
-                                  owner: owner?.name || '',
+                                  owner: member?.name || '',
                                 }))
                               }}
                             >
-                              <option value="">Nessuno</option>
-                              {members.map((row) => (
-                                <option key={row.id} value={row.id}>
-                                  {row.name || row.role || row.initials}
+                              <option value="">Nessun proprietario</option>
+                              {familyMembers.map((member) => (
+                                <option key={member.id} value={member.id}>
+                                  {member.name || member.role || member.initials || member.id}
                                 </option>
                               ))}
                             </select>
                           </label>
 
                           <label className="fg">
-                            <span className="fl">Titolo*</span>
+                            <span className="fl">Titolo</span>
                             <input
                               className="fi"
-                              value={editDocumentForm.title}
+                              value={editingDocumentForm.title}
                               onChange={(e) =>
-                                setEditDocumentForm((prev) => ({ ...prev, title: e.target.value }))
+                                setEditingDocumentForm((prev) => ({
+                                  ...prev,
+                                  title: e.target.value,
+                                }))
                               }
                             />
                           </label>
@@ -1763,21 +2010,27 @@ export default function ArchivioPage() {
                             <span className="fl">Numero</span>
                             <input
                               className="fi"
-                              value={editDocumentForm.number}
+                              value={editingDocumentForm.number}
                               onChange={(e) =>
-                                setEditDocumentForm((prev) => ({ ...prev, number: e.target.value }))
+                                setEditingDocumentForm((prev) => ({
+                                  ...prev,
+                                  number: e.target.value,
+                                }))
                               }
                             />
                           </label>
 
                           <label className="fg">
-                            <span className="fl">Rilascio</span>
+                            <span className="fl">Emissione</span>
                             <input
                               className="fi"
                               type="date"
-                              value={editDocumentForm.issueDate}
+                              value={editingDocumentForm.issueDate}
                               onChange={(e) =>
-                                setEditDocumentForm((prev) => ({ ...prev, issueDate: e.target.value }))
+                                setEditingDocumentForm((prev) => ({
+                                  ...prev,
+                                  issueDate: e.target.value,
+                                }))
                               }
                             />
                           </label>
@@ -1787,66 +2040,91 @@ export default function ArchivioPage() {
                             <input
                               className="fi"
                               type="date"
-                              value={editDocumentForm.expiryDate}
+                              value={editingDocumentForm.expiryDate}
                               onChange={(e) =>
-                                setEditDocumentForm((prev) => ({ ...prev, expiryDate: e.target.value }))
+                                setEditingDocumentForm((prev) => ({
+                                  ...prev,
+                                  expiryDate: e.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+
+                          <label className="fg">
+                            <span className="fl">Archivio</span>
+                            <input
+                              className="fi"
+                              value={editingDocumentForm.storage}
+                              onChange={(e) =>
+                                setEditingDocumentForm((prev) => ({
+                                  ...prev,
+                                  storage: e.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+
+                          <label className="fg">
+                            <span className="fl">Owner manuale</span>
+                            <input
+                              className="fi"
+                              value={editingDocumentForm.owner}
+                              onChange={(e) =>
+                                setEditingDocumentForm((prev) => ({
+                                  ...prev,
+                                  owner: e.target.value,
+                                }))
                               }
                             />
                           </label>
                         </div>
 
-                        <label className="fg">
-                          <span className="fl">Storage</span>
-                          <input
-                            className="fi"
-                            value={editDocumentForm.storage}
-                            onChange={(e) =>
-                              setEditDocumentForm((prev) => ({ ...prev, storage: e.target.value }))
-                            }
-                          />
-                        </label>
+                        <div className="archive-form-grid">
+                          <label className="fg">
+                            <span className="fl">Link Drive</span>
+                            <textarea
+                              className="fi"
+                              rows={3}
+                              value={editingDocumentForm.driveLinksText}
+                              onChange={(e) =>
+                                setEditingDocumentForm((prev) => ({
+                                  ...prev,
+                                  driveLinksText: e.target.value,
+                                }))
+                              }
+                            />
+                          </label>
 
-                        <label className="fg">
-                          <span className="fl">Link Drive / URL</span>
-                          <textarea
-                            className="fi"
-                            rows={3}
-                            value={editDocumentForm.driveLinksText}
-                            onChange={(e) =>
-                              setEditDocumentForm((prev) => ({
-                                ...prev,
-                                driveLinksText: e.target.value,
-                              }))
-                            }
-                          />
-                        </label>
+                          <label className="fg">
+                            <span className="fl">Note</span>
+                            <textarea
+                              className="fi"
+                              rows={3}
+                              value={editingDocumentForm.notes}
+                              onChange={(e) =>
+                                setEditingDocumentForm((prev) => ({
+                                  ...prev,
+                                  notes: e.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                        </div>
 
-                        <label className="fg">
-                          <span className="fl">Note</span>
-                          <textarea
-                            className="fi"
-                            rows={2}
-                            value={editDocumentForm.notes}
-                            onChange={(e) =>
-                              setEditDocumentForm((prev) => ({ ...prev, notes: e.target.value }))
-                            }
-                          />
-                        </label>
-
-                        <div className="arch-actions">
+                        <div className="row-actions" style={{ justifyContent: 'flex-start' }}>
                           <button
                             type="button"
-                            className="btn-inline-soft"
-                            onClick={() => saveEditDocument(item.id)}
+                            className="btn btn-inline-soft"
+                            onClick={() => saveEditDocument(doc.id)}
                           >
                             Salva
                           </button>
                           <button
                             type="button"
-                            className="btn-inline-ghost"
+                            className="btn btn-inline-ghost"
                             onClick={() => {
                               setEditingDocumentId('')
-                              setEditDocumentForm(emptyDocumentForm)
+                              setEditingDocumentForm(emptyDocumentForm)
                             }}
                           >
                             Annulla
@@ -1854,213 +2132,103 @@ export default function ArchivioPage() {
                         </div>
                       </div>
                     ) : (
-                      <>
-                        <div className="arch-item-head">
-                          <div>
-                            <div className="arch-item-title">{item.title || 'Documento'}</div>
-                            <div className="arch-item-subtitle">
-                              {(item.category || 'Categoria')} · {item.owner || 'Senza proprietario'}
-                            </div>
-                          </div>
-
-                          <div className="arch-actions">
-                            <button
-                              type="button"
-                              className="btn-inline-soft"
-                              onClick={() => startEditDocument(item)}
-                            >
-                              Modifica
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-inline-danger"
-                              onClick={() => deleteDocument(item.id)}
-                            >
-                              Elimina
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="arch-pills">
-                          <div className="arch-pill">Numero: {item.number || '—'}</div>
-                          <div className="arch-pill">Rilascio: {formatDate(item.issueDate)}</div>
-                          <div className="arch-pill">Scadenza: {formatDate(item.expiryDate)}</div>
-                          <div className="arch-pill">Storage: {item.storage || '—'}</div>
-                        </div>
-
-                        {item.notes ? <div className="arch-notes">{item.notes}</div> : null}
-                      </>
+                      <div>
+                        <div className="tree-title">{doc.title || 'Documento'}</div>
+                        <div className="tree-subtitle">{doc.category || 'Categoria non definita'}</div>
+                      </div>
                     )}
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="arch-empty">Nessun documento presente.</div>
-            )
-          ) : warranties.length ? (
-            <div className="arch-list">
-              {warranties.map((item) => (
-                <div key={item.id} className="arch-item">
-                  {editingWarrantyId === item.id ? (
-                    <div className="edit-box">
-                      <div className="arch-form-grid">
-                        <label className="fg">
-                          <span className="fl">Prodotto*</span>
-                          <input
-                            className="fi"
-                            value={editWarrantyForm.item}
-                            onChange={(e) =>
-                              setEditWarrantyForm((prev) => ({ ...prev, item: e.target.value }))
-                            }
-                          />
-                        </label>
 
-                        <label className="fg">
-                          <span className="fl">Brand</span>
-                          <input
-                            className="fi"
-                            value={editWarrantyForm.brand}
-                            onChange={(e) =>
-                              setEditWarrantyForm((prev) => ({ ...prev, brand: e.target.value }))
-                            }
-                          />
-                        </label>
+                  <div>{doc.owner || '—'}</div>
+                  <div>{doc.number || '—'}</div>
+                  <div>{formatDate(doc.issueDate)}</div>
+                  <div>
+                    {doc.expiryDate ? (
+                      <span className={`badge ${badge.className}`}>
+                        {formatDate(doc.expiryDate)} · {badge.label}
+                      </span>
+                    ) : '—'}
+                  </div>
 
-                        <label className="fg">
-                          <span className="fl">Acquisto</span>
-                          <input
-                            className="fi"
-                            type="date"
-                            value={editWarrantyForm.purchaseDate}
-                            onChange={(e) =>
-                              setEditWarrantyForm((prev) => ({
-                                ...prev,
-                                purchaseDate: e.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Scadenza</span>
-                          <input
-                            className="fi"
-                            type="date"
-                            value={editWarrantyForm.expiryDate}
-                            onChange={(e) =>
-                              setEditWarrantyForm((prev) => ({
-                                ...prev,
-                                expiryDate: e.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-
-                        <label className="fg">
-                          <span className="fl">Fattura</span>
-                          <input
-                            className="fi"
-                            value={editWarrantyForm.invoiceRef}
-                            onChange={(e) =>
-                              setEditWarrantyForm((prev) => ({
-                                ...prev,
-                                invoiceRef: e.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-                      </div>
-
-                      <label className="fg">
-                        <span className="fl">Link Drive / URL</span>
-                        <textarea
-                          className="fi"
-                          rows={3}
-                          value={editWarrantyForm.driveLinksText}
-                          onChange={(e) =>
-                            setEditWarrantyForm((prev) => ({
-                              ...prev,
-                              driveLinksText: e.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-
-                      <label className="fg">
-                        <span className="fl">Note</span>
-                        <textarea
-                          className="fi"
-                          rows={2}
-                          value={editWarrantyForm.notes}
-                          onChange={(e) =>
-                            setEditWarrantyForm((prev) => ({ ...prev, notes: e.target.value }))
-                          }
-                        />
-                      </label>
-
-                      <div className="arch-actions">
-                        <button
-                          type="button"
-                          className="btn-inline-soft"
-                          onClick={() => saveEditWarranty(item.id)}
-                        >
-                          Salva
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-inline-ghost"
-                          onClick={() => {
-                            setEditingWarrantyId('')
-                            setEditWarrantyForm(emptyWarrantyForm)
-                          }}
-                        >
-                          Annulla
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="arch-item-head">
-                        <div>
-                          <div className="arch-item-title">{item.item || 'Garanzia'}</div>
-                          <div className="arch-item-subtitle">
-                            {item.brand || 'Brand non indicato'} · acquisto {formatDate(item.purchaseDate)}
-                          </div>
-                        </div>
-
-                        <div className="arch-actions">
-                          <button
-                            type="button"
-                            className="btn-inline-soft"
-                            onClick={() => startEditWarranty(item)}
-                          >
-                            Modifica
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-inline-danger"
-                            onClick={() => deleteWarranty(item.id)}
-                          >
-                            Elimina
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="arch-pills">
-                        <div className="arch-pill">Scadenza: {formatDate(item.expiryDate)}</div>
-                        <div className="arch-pill">Fattura: {item.invoiceRef || '—'}</div>
-                      </div>
-
-                      {item.notes ? <div className="arch-notes">{item.notes}</div> : null}
-                    </>
-                  )}
+                  <div className="row-actions">
+                    <button
+                      type="button"
+                      className="btn btn-inline-soft"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        startEditDocument(doc)
+                      }}
+                    >
+                      Modifica
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-inline-danger"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        deleteDocument(doc.id)
+                      }}
+                    >
+                      Elimina
+                    </button>
+                  </div>
                 </div>
-              ))}
-            </div>
+              )
+            })
           ) : (
-            <div className="arch-empty">Nessuna garanzia presente.</div>
+            <div className="tree-row">
+              <div className="empty-box">Nessuna categoria o documento presente.</div>
+            </div>
           )}
         </div>
+
+        {selectedNodeId.startsWith('doc_') ? (
+          <div className="section-stack" style={{ marginTop: 12 }}>
+            {(() => {
+              const docId = selectedNodeId.replace('doc_', '')
+              const doc = documents.find((item) => item.id === docId)
+              if (!doc) return null
+
+              return (
+                <div className="family-card">
+                  <div className="family-head">
+                    <div>
+                      <div className="tree-title">{doc.title || 'Documento'}</div>
+                      <div className="tree-subtitle">
+                        {doc.category || 'Categoria'} · {doc.owner || 'Senza proprietario'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pill-row">
+                    <MetaPill label="Numero" value={doc.number} />
+                    <MetaPill label="Emissione" value={formatDate(doc.issueDate)} />
+                    <MetaPill label="Scadenza" value={formatDate(doc.expiryDate)} />
+                    <MetaPill label="Archivio" value={doc.storage} />
+                  </div>
+
+                  {ensureArray(doc.driveLinks).length ? (
+                    <div className="doc-links">
+                      {doc.driveLinks.map((link) => (
+                        <a
+                          key={link.id}
+                          href={link.url}
+                          className="link-chip"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {link.label || 'Apri link'}
+                        </a>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {doc.notes ? <div className="empty-box">{doc.notes}</div> : null}
+                </div>
+              )
+            })()}
+          </div>
+        ) : null}
       </div>
     </div>
   )

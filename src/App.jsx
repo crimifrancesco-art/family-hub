@@ -6,41 +6,6 @@ import SalutePage from "./pages/SalutePage";
 import ArchivioPage from "./pages/ArchivioPage";
 import ViaggiPage from "./pages/ViaggiPage";
 
-const TABS = [
-  {
-    key: "dashboard",
-    label: "Dashboard",
-    shortLabel: "Home",
-    icon: DashboardIcon,
-    component: DashboardPage,
-    description: "Panoramica generale della famiglia.",
-  },
-  {
-    key: "salute",
-    label: "Salute",
-    shortLabel: "Salute",
-    icon: HealthIcon,
-    component: SalutePage,
-    description: "Visite, terapie, farmaci e documenti sanitari.",
-  },
-  {
-    key: "archivio",
-    label: "Archivio",
-    shortLabel: "Archivio",
-    icon: ArchiveIcon,
-    component: ArchivioPage,
-    description: "Documenti e materiali condivisi.",
-  },
-  {
-    key: "viaggi",
-    label: "Viaggi",
-    shortLabel: "Viaggi",
-    icon: TravelIcon,
-    component: ViaggiPage,
-    description: "Piani viaggio, tappe e prenotazioni.",
-  },
-];
-
 function DashboardIcon(props) {
   return (
     <svg
@@ -105,8 +70,44 @@ function TravelIcon(props) {
   );
 }
 
+const TABS = [
+  {
+    key: "dashboard",
+    label: "Dashboard",
+    shortLabel: "Home",
+    icon: DashboardIcon,
+    component: DashboardPage,
+    description: "Panoramica generale della famiglia.",
+  },
+  {
+    key: "salute",
+    label: "Salute",
+    shortLabel: "Salute",
+    icon: HealthIcon,
+    component: SalutePage,
+    description: "Visite, terapie, farmaci e documenti sanitari.",
+  },
+  {
+    key: "archivio",
+    label: "Archivio",
+    shortLabel: "Archivio",
+    icon: ArchiveIcon,
+    component: ArchivioPage,
+    description: "Documenti e materiali condivisi.",
+  },
+  {
+    key: "viaggi",
+    label: "Viaggi",
+    shortLabel: "Viaggi",
+    icon: TravelIcon,
+    component: ViaggiPage,
+    description: "Piani viaggio, tappe e prenotazioni.",
+  },
+];
+
 function getUserDisplayName(user) {
   if (!user) return "";
+
   return (
     user.user_metadata?.full_name ||
     user.user_metadata?.name ||
@@ -543,6 +544,7 @@ function FamilyHubShell() {
   );
 
   const ActivePage = activeTabConfig.component;
+  const ActiveIcon = activeTabConfig.icon;
   const userDisplayName = getUserDisplayName(user);
   const userEmail = user?.email || "";
   const userInitials = getUserInitials(user);
@@ -1036,6 +1038,7 @@ function FamilyHubShell() {
             {TABS.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.key;
+
               return (
                 <button
                   key={tab.key}
@@ -1075,9 +1078,7 @@ function FamilyHubShell() {
           <div className="fh-topbar">
             <div className="fh-topbar-left">
               <div className="fh-topbar-title">Family Hub</div>
-              <div className="fh-topbar-subtitle">
-                {activeTabConfig.label}
-              </div>
+              <div className="fh-topbar-subtitle">{activeTabConfig.label}</div>
             </div>
             <button
               type="button"
@@ -1114,7 +1115,7 @@ function FamilyHubShell() {
               </div>
             </div>
             <div className="fh-active-pill">
-              <activeTabConfig.icon />
+              <ActiveIcon />
               <span>{activeTabConfig.shortLabel}</span>
             </div>
           </div>
